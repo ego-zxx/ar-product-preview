@@ -16,6 +16,8 @@ const https =
     : undefined
 
 export default defineConfig({
+  // Set VITE_BASE=/ar/ when hosting in a subdirectory (cPanel subfolders).
+  base: process.env.VITE_BASE ?? '/',
   plugins: [react()],
   server: { host: true, proxy, https },
   preview: { host: true, proxy, https },

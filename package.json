@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "server": "node server/server.mjs",
     "serve": "vite preview --host --port 5173",
-    "start": "node server/server.mjs"
+    "start": "node server/server.mjs",
+    "package": "vite build && cd dist && zip -qr ../ar-preview-cpanel.zip . && cd .. && echo 'ar-preview-cpanel.zip ready'"
   },
   "dependencies": {
     "@react-three/fiber": "^9.7.0",

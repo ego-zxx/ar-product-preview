@@ -68,6 +68,52 @@ Two traps here:
   each material's shader. Requesting `gpu-optimized` alone gets the feature
   refused outright, so both are listed in `usagePreference`.
 
+## Deploying to cPanel
+
+cPanel suits this better than a serverless host: it has a real filesystem, so
+`server/db.json` and uploaded models persist, and AutoSSL issues a **real
+certificate** — which is what finally makes QR codes scan without a warning.
+
+### Which of the two setups you need
+
+Look for **Setup Node.js App** in cPanel (Software section).
+
+**If it is there — full app.** Frontend and API both run.
+
+1. Upload the repo (minus `node_modules`) to something like `~/ar-api`.
+2. Setup Node.js App → Node 20+, application root `~/ar-api`, startup file
+   `server/server.mjs`. Add environment variables:
+   `ALLOWED_ORIGIN=https://yourdomain.com`. cPanel supplies `PORT`.
+3. Run NPM Install, then Start. The admin key prints to the app log on first
+   boot — take it from there.
+4. Build the frontend against it and upload:
+   ```bash
+   VITE_API_URL=https://yourdomain.com/api npm run package
+   ```
+   Unzip `ar-preview-cpanel.zip` into `public_html`.
+
+**If it is not there — demo without the backend.** No QR passes, no admin, no
+uploads; the catalogue and AR still work, using the built-in products.
+
+```bash
+VITE_OPEN_ACCESS=1 npm run package
+```
+
+`VITE_OPEN_ACCESS=1` removes the pass gate, since with no API there is nothing
+to issue or check passes against.
+
+### Either way
+
+- Unzip into `public_html` (or a subfolder — then build with
+  `VITE_BASE=/ar/` so asset paths resolve).
+- `public/.htaccess` ships with the build and handles the three things Apache
+  gets wrong here: forcing HTTPS (WebXR will not start without it), serving
+  `.glb` as `model/gltf-binary` (a wrong Content-Type makes the loader reject
+  the model), and routing `/admin` to `index.html`.
+- Admin is reachable at `/admin` or `/#/admin` — the hash route needs no
+  rewrite at all, so use it if the rewrite gives trouble.
+- In admin, set **Link the QR points to** to your real domain.
+
 ## Deploying (split hosting)
 
 The API keeps state on disk (`server/db.json`, `server/uploads/`), so it needs a

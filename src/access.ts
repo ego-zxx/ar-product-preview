@@ -25,10 +25,19 @@ async function post(url: string, body: unknown) {
   return { ok: res.ok, data: await res.json() }
 }
 
+/**
+ * VITE_OPEN_ACCESS=1 drops the QR gate entirely — for a demo hosted without the
+ * API running, where there is nothing to issue or check passes against.
+ */
+const OPEN = import.meta.env.VITE_OPEN_ACCESS === '1'
+
 export function useAccess(): Access {
-  const [access, setAccess] = useState<Access>({ state: 'checking' })
+  const [access, setAccess] = useState<Access>(
+    OPEN ? { state: 'valid', expiresAt: Infinity } : { state: 'checking' },
+  )
 
   useEffect(() => {
+    if (OPEN) return
     let timer: ReturnType<typeof setInterval>
 
     const check = async (token: string) => {
