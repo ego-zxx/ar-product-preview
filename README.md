@@ -47,16 +47,26 @@ WebKit. `public/ios-spike.html` is a free marker-tracking fallback (MindAR).
 
 Requested as optional, so a session still starts when a device declines one:
 
-| Feature | Used for | Galaxy A33 5G |
-|---|---|---|
-| `hit-test` | finding surfaces | yes |
-| `anchors` | keeping objects put off-camera | yes |
-| `plane-detection` | occlusion + drag targets | yes |
-| `light-estimation` | lighting/reflections from the real room | yes |
-| `depth-sensing` | per-pixel occlusion (hands, furniture) | **no** |
+Measured on real hardware:
 
-Without `depth-sensing` only plane-based occlusion is possible — tables and
-walls hide objects behind them; a laptop or a hand cannot.
+| Feature | Used for | A33 5G | S20 FE 5G |
+|---|---|---|---|
+| `hit-test` | finding surfaces | yes | yes |
+| `anchors` | keeping objects put off-camera | yes | yes |
+| `plane-detection` | occlusion + drag targets | yes | yes |
+| `light-estimation` | lighting/reflections from the real room | yes | yes |
+| `mesh-detection` | scene geometry | no | no |
+| `depth-sensing` | per-pixel occlusion (hands, furniture) | **no** | yes, `cpu-optimized` only |
+
+Two traps here:
+
+- Without `depth-sensing` only plane-based occlusion is possible — tables and
+  walls hide objects behind them; a laptop or a hand cannot.
+- three.js renders a depth occluder automatically, but **only** when the runtime
+  grants `gpu-optimized` usage. The S20 FE offers `cpu-optimized` only, so
+  `src/occlusion.ts` uploads the depth buffer itself and injects the test into
+  each material's shader. Requesting `gpu-optimized` alone gets the feature
+  refused outright, so both are listed in `usagePreference`.
 
 ## Deploying (split hosting)
 
