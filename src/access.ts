@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { api } from './api'
 
 const deviceId = (() => {
   let id = localStorage.getItem('deviceId')
@@ -16,7 +17,7 @@ export type Access =
   | { state: 'denied'; reason: string }
 
 async function post(url: string, body: unknown) {
-  const res = await fetch(url, {
+  const res = await fetch(api(url), {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),

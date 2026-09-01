@@ -58,19 +58,42 @@ Requested as optional, so a session still starts when a device declines one:
 Without `depth-sensing` only plane-based occlusion is possible — tables and
 walls hide objects behind them; a laptop or a hand cannot.
 
-## Deploying
+## Deploying (split hosting)
 
-**The API does not run on Vercel as-is.** `server/server.mjs` is a long-lived
-Node process storing state in `server/db.json` and uploaded models in
-`server/uploads/`. Serverless filesystems are ephemeral, so passes, sessions and
-uploads would vanish between invocations.
+The API keeps state on disk (`server/db.json`, `server/uploads/`), so it needs a
+host with a real filesystem. Vercel is serverless and would lose passes,
+sessions and uploads between invocations — the frontend goes there, the API
+does not.
 
-Options:
+### API — Railway / Render / Fly
 
-1. Frontend on Vercel, API on a host with a real filesystem (Railway, Render,
-   Fly). Point the frontend's `/api` and `/models` at it.
-2. Port the API to serverless functions plus managed storage (Postgres/KV for
-   the tables, Blob for the `.glb` files).
+Deploy this repo; the start command is `node server/server.mjs`. It reads:
+
+| Env | Purpose |
+|---|---|
+| `PORT` | assigned by the platform |
+| `ALLOWED_ORIGIN` | your Vercel URL, e.g. `https://your-app.vercel.app` |
+
+The admin key is printed to the logs on first boot — grab it from there.
+
+Attach a **persistent volume** mounted at `server/` or the JSON store and
+uploaded models are wiped on every redeploy.
+
+### Frontend — Vercel
+
+Import the repo; `vercel.json` sets the build. Add one env var:
+
+```
+VITE_API_URL=https://your-api.up.railway.app
+```
+
+Everything client-side routes through `src/api.ts`, so that single variable
+points the app at the API. Leave it unset locally — Vite proxies `/api` and
+`/models` to `localhost:8788`.
+
+**HTTPS is mandatory** for WebXR; Vercel gives you a real certificate, which
+also means QR codes scan with no warning (unlike the self-signed LAN setup).
+Set the admin panel's "Link the QR points to" field to your Vercel URL.
 
 ## Tests
 

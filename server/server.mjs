@@ -23,6 +23,7 @@ console.log(`Admin key: ${db.adminKey}`)
 
 const HEARTBEAT_ACTIVE_MS = 90_000
 const ADMIN_SESSION_MS = 24 * 60 * 60 * 1000
+const PORT = Number(process.env.PORT) || 8788
 
 const validSession = (token) =>
   !!token && db.sessions.some((s) => s.token === token && Date.now() < s.expiresAt)
@@ -157,8 +158,23 @@ const routes = {
 
 const MIME = { '.glb': 'model/gltf-binary', '.gltf': 'model/gltf+json', '.usdz': 'model/vnd.usdz+zip' }
 
+// Split hosting: the frontend (Vercel) calls this API on another origin.
+// Set ALLOWED_ORIGIN to the site's URL in production; '*' is the dev default.
+const ORIGIN = process.env.ALLOWED_ORIGIN ?? '*'
+const CORS = {
+  'access-control-allow-origin': ORIGIN,
+  'access-control-allow-methods': 'GET, POST, PUT, OPTIONS',
+  'access-control-allow-headers': 'content-type, x-admin-key, x-admin-session, x-filename',
+  'access-control-max-age': '86400',
+}
+
 createServer(async (req, res) => {
   const path = req.url.split('?')[0]
+
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204, CORS).end()
+    return
+  }
 
   // serve uploaded models
   if (req.method === 'GET' && path.startsWith('/models/')) {
@@ -167,11 +183,11 @@ createServer(async (req, res) => {
       const buf = readFileSync(new URL(file, UPLOADS))
       res.writeHead(200, {
         'content-type': MIME[extname(file)] ?? 'application/octet-stream',
-        'access-control-allow-origin': '*',
+        ...CORS,
       })
       res.end(buf)
     } catch {
-      res.writeHead(404).end('not found')
+      res.writeHead(404, CORS).end('not found')
     }
     return
   }
@@ -179,12 +195,12 @@ createServer(async (req, res) => {
   // raw-body model upload: PUT /api/admin/upload with x-filename header
   if (req.method === 'PUT' && path === '/api/admin/upload') {
     if (req.headers['x-admin-key'] !== db.adminKey && !validSession(req.headers['x-admin-session'])) {
-      res.writeHead(401).end('{"error":"unauthorized"}')
+      res.writeHead(401, CORS).end('{"error":"unauthorized"}')
       return
     }
     const name = basename(String(req.headers['x-filename'] ?? 'model.glb')).replace(/[^\w.-]/g, '_')
     if (!['.glb', '.gltf'].includes(extname(name).toLowerCase())) {
-      res.writeHead(400).end('{"error":"only .glb or .gltf"}')
+      res.writeHead(400, CORS).end('{"error":"only .glb or .gltf"}')
       return
     }
     const chunks = []
@@ -192,7 +208,7 @@ createServer(async (req, res) => {
     for await (const c of req) {
       size += c.length
       if (size > MAX_UPLOAD) {
-        res.writeHead(413).end('{"error":"file too large (60MB max)"}')
+        res.writeHead(413, CORS).end('{"error":"file too large (60MB max)"}')
         req.destroy()
         return
       }
@@ -200,7 +216,7 @@ createServer(async (req, res) => {
     }
     const file = `${randomBytes(4).toString('hex')}-${name}`
     writeFileSync(new URL(file, UPLOADS), Buffer.concat(chunks))
-    res.writeHead(200, { 'content-type': 'application/json' })
+    res.writeHead(200, { 'content-type': 'application/json', ...CORS })
     res.end(JSON.stringify({ url: `/models/${file}` }))
     return
   }
@@ -212,13 +228,13 @@ createServer(async (req, res) => {
       for await (const c of req) raw += c
       body = raw ? JSON.parse(raw) : {}
     } catch {
-      res.writeHead(400).end('{"error":"bad json"}')
+      res.writeHead(400, CORS).end('{"error":"bad json"}')
       return
     }
   }
   const handler = routes[`${req.method} ${path}`]
   if (!handler) {
-    res.writeHead(404).end('{"error":"not found"}')
+    res.writeHead(404, CORS).end('{"error":"not found"}')
     return
   }
   if (path.startsWith('/api/admin/')) {
@@ -226,11 +242,12 @@ createServer(async (req, res) => {
     // login proves itself with the key; everything else may use a session
     const ok = byKey || (path !== '/api/admin/login' && validSession(req.headers['x-admin-session']))
     if (!ok) {
-      res.writeHead(401).end('{"error":"unauthorized"}')
+      res.writeHead(401, CORS).end('{"error":"unauthorized"}')
       return
     }
   }
   const [status, payload] = handler(body)
-  res.writeHead(status, { 'content-type': 'application/json' })
+  res.writeHead(status, { 'content-type': 'application/json', ...CORS })
   res.end(JSON.stringify(payload))
-}).listen(8788, () => console.log('API on http://localhost:8788'))
+})
+  .listen(PORT, () => console.log(`API on http://localhost:${PORT}`))

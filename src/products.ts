@@ -1,3 +1,5 @@
+import { api, assetUrl } from './api'
+
 export type Product = {
   id: string
   name: string
@@ -15,8 +17,10 @@ export const BUILTIN: Product[] = [
 
 export async function fetchProducts(): Promise<Product[]> {
   try {
-    const res = await fetch('/api/products')
-    return [...BUILTIN, ...(res.ok ? await res.json() : [])]
+    const res = await fetch(api('/api/products'))
+    const remote: Product[] = res.ok ? await res.json() : []
+    // rewrite /models/... to the API host
+    return [...BUILTIN, ...remote.map((p) => ({ ...p, url: assetUrl(p.url) }))]
   } catch {
     return BUILTIN
   }

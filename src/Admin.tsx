@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import QRCode from 'qrcode'
 import type { Product } from './products'
+import { api as apiUrl } from './api'
 import { useConfirm } from './Confirm'
 
 const TrashIcon = () => (
@@ -59,7 +60,7 @@ export function Admin() {
   const [qrUrl, setQrUrl] = useState('')
 
   const api = (path: string, init?: RequestInit) =>
-    fetch(path, {
+    fetch(apiUrl(path), {
       ...init,
       headers: {
         'content-type': 'application/json',
@@ -76,7 +77,7 @@ export function Admin() {
 
   const signIn = async () => {
     setLoginError('')
-    const res = await fetch('/api/admin/login', {
+    const res = await fetch(apiUrl('/api/admin/login'), {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-admin-key': key },
     })
@@ -108,7 +109,7 @@ export function Admin() {
       const local = ['localhost', '127.0.0.1'].includes(location.hostname)
       return local && data.lanIp ? `https://${data.lanIp}:5173` : location.origin
     })
-    setProducts(await (await fetch('/api/products')).json())
+    setProducts(await (await fetch(apiUrl('/api/products'))).json())
   }
 
   useEffect(() => {
@@ -142,7 +143,7 @@ export function Admin() {
     if (!file || !form.name) return
     setBusy('Uploading…')
     try {
-      const up = await fetch('/api/admin/upload', {
+      const up = await fetch(apiUrl('/api/admin/upload'), {
         method: 'PUT',
         headers: { 'x-admin-key': key, 'x-filename': file.name },
         body: file,

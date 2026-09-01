@@ -9,7 +9,8 @@
     "preview": "vite preview --host",
     "typecheck": "tsc --noEmit",
     "server": "node server/server.mjs",
-    "serve": "vite preview --host --port 5173"
+    "serve": "vite preview --host --port 5173",
+    "start": "node server/server.mjs"
   },
   "dependencies": {
     "@react-three/fiber": "^9.7.0",
@@ -29,5 +30,8 @@
     "@vitejs/plugin-react": "^6.1.1",
     "typescript": "^7.0.2",
     "vite": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }
