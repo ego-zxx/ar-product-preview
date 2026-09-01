@@ -3,8 +3,8 @@ import { Canvas } from '@react-three/fiber'
 import { Matrix4 } from 'three'
 import { XR, XRDomOverlay, createXRStore, useXR } from '@react-three/xr'
 import {
-  Env, MAX_OBJECTS, PlaneOcclusion, Placement, RealLighting, newGesture,
-  type Draft, type Gesture, type Placed,
+  DepthOcclusion, Env, MAX_OBJECTS, PlaneOcclusion, Placement, RealLighting,
+  newGesture, type Draft, type Gesture, type Placed,
 } from './ARScene'
 import { useAccess } from './access'
 import { fetchProducts, type Product } from './products'
@@ -30,7 +30,7 @@ const store = createXRStore({
     ],
     domOverlay: { root: overlayRoot },
     depthSensing: {
-      usagePreference: ['gpu-optimized'],
+      usagePreference: ['gpu-optimized', 'cpu-optimized'],
       dataFormatPreference: ['luminance-alpha', 'float32'],
     },
   } as XRSessionInit,
@@ -325,6 +325,7 @@ export function App() {
         <XR store={store}>
           <Env />
           <PlaneOcclusion />
+          <DepthOcclusion />
           <RealLighting />
           <Placement
             objects={objects}

@@ -12,6 +12,7 @@ import {
 } from '@react-three/xr'
 import { CoffeeCup, Faucet } from './models'
 import type { Product } from './products'
+import { patchForOcclusion, updateOcclusion } from './occlusion'
 
 const UP = new Vector3(0, 1, 0)
 
@@ -112,6 +113,31 @@ export function PlaneOcclusion() {
  * lit like the room it is standing in. Falls back silently to the static rig
  * when the runtime declines the feature.
  */
+/**
+ * Drives real-world occlusion. Reads the depth buffer each frame and keeps
+ * every model's material patched with the depth test.
+ */
+export function DepthOcclusion() {
+  const { gl, scene } = useThree()
+  useFrame((_s, _d, frame) => {
+    if (!frame) return
+    const ref = gl.xr.getReferenceSpace()
+    const pose = ref ? frame.getViewerPose(ref) : null
+    const view = pose?.views[0]
+    if (!view) return
+    const ctx = gl.getContext()
+    const ok = updateOcclusion(frame, view, ctx.drawingBufferWidth, ctx.drawingBufferHeight)
+    if (!ok) return
+    // materials appear as products load, so keep sweeping
+    scene.traverse((o) => {
+      const m = (o as { material?: unknown }).material
+      if (!m) return
+      for (const mat of Array.isArray(m) ? m : [m]) patchForOcclusion(mat as never)
+    })
+  })
+  return null
+}
+
 export function RealLighting() {
   const { gl, scene } = useThree()
   const probe = useRef<XRLightProbe | null>(null)
