@@ -1,8 +1,9 @@
 import { Suspense, useEffect, useRef } from 'react'
 import { useFrame, useLoader, useThree } from '@react-three/fiber'
 import {
-  AmbientLight, DirectionalLight, DoubleSide, Group, Matrix4, Object3D,
-  PMREMGenerator, Quaternion, Raycaster, Vector2, Vector3, WebGLCubeRenderTarget,
+  AmbientLight, CanvasTexture, DirectionalLight, DoubleSide, Group, Matrix4,
+  Object3D, PMREMGenerator, Quaternion, Raycaster, SRGBColorSpace, Vector2,
+  Vector3, WebGLCubeRenderTarget,
 } from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
@@ -198,12 +199,58 @@ function GltfModel({ url, scale }: { url: string; scale: number }) {
 }
 
 export function Model({ product }: { product: Product }) {
-  if (product.url === 'builtin:faucet') return <Faucet />
-  if (product.url === 'builtin:cup') return <CoffeeCup />
   return (
-    <Suspense fallback={null}>
-      <GltfModel url={product.url} scale={product.scale} />
-    </Suspense>
+    <>
+      <ContactShadow />
+      {product.url === 'builtin:faucet' ? (
+        <Faucet />
+      ) : product.url === 'builtin:cup' ? (
+        <CoffeeCup />
+      ) : (
+        <Suspense fallback={null}>
+          <GltfModel url={product.url} scale={product.scale} />
+        </Suspense>
+      )}
+    </>
+  )
+}
+
+/**
+ * Soft blob shadow drawn on the surface under an object. Without a contact
+ * shadow the eye reads even a perfectly placed object as hovering — this does
+ * more for "it's really there" than any amount of positional accuracy.
+ *
+ * ponytail: painted gradient, not a shadow map. A real shadow needs a light
+ * direction and a depth pass per frame; this costs one texture and always
+ * lands directly under the object. Swap it if directional shadows matter.
+ */
+const shadowTexture = (() => {
+  const size = 128
+  const c = document.createElement('canvas')
+  c.width = c.height = size
+  const ctx = c.getContext('2d')!
+  const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2)
+  g.addColorStop(0, 'rgba(0,0,0,0.55)')
+  g.addColorStop(0.45, 'rgba(0,0,0,0.28)')
+  g.addColorStop(1, 'rgba(0,0,0,0)')
+  ctx.fillStyle = g
+  ctx.fillRect(0, 0, size, size)
+  const t = new CanvasTexture(c)
+  t.colorSpace = SRGBColorSpace
+  return t
+})()
+
+function ContactShadow({ radius = 0.075 }: { radius?: number }) {
+  return (
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.0012, 0]} renderOrder={1}>
+      <planeGeometry args={[radius * 2.4, radius * 2.4]} />
+      <meshBasicMaterial
+        map={shadowTexture}
+        transparent
+        opacity={0.85}
+        depthWrite={false}
+      />
+    </mesh>
   )
 }
 
@@ -268,6 +315,9 @@ export function Placement({
 
   const raycaster = useRef(new Raycaster()).current
   const centre = useRef(new Vector2(0, 0)).current
+  const downRay = useRef(new Raycaster()).current
+  const above = useRef(new Vector3()).current
+  const DOWN = useRef(new Vector3(0, -1, 0)).current
 
   // Planes only. A feature-point hit can sit anywhere in mid-air, which is what
   // made models float; planes give a pose that lies on a real surface.
@@ -318,6 +368,16 @@ export function Placement({
         const hits = raycaster.intersectObjects([...surfaces], false)
         if (hits.length) draftPos.copy(hits[0].point)
       }
+    }
+
+    // Sit it on the surface. Cast straight down from just above the object onto
+    // the detected planes and pin Y to whatever it lands on, so an object can
+    // never hover — regardless of what the hit-test or a drag produced.
+    if (draft && surfaces.size) {
+      above.copy(draftPos).y += 0.5
+      downRay.set(above, DOWN)
+      const below = downRay.intersectObjects([...surfaces], false)
+      if (below.length) draftPos.y = below[0].point.y
     }
 
     const d = draftRef.current

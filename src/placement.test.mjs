@@ -37,3 +37,24 @@ const table = intersectGroundPlane([0, 1.5, 0], [0, -Math.SQRT1_2, -Math.SQRT1_2
 assert.ok(Math.abs(table[2] + 0.75) < 1e-6, 'higher plane is nearer')
 
 console.log('placement logic ok')
+
+// --- surface snap: an object may never hover above what it rests on ---
+// Cast down from just above the object; pin Y to the first surface hit.
+function snapToSurface(objY, surfaceYs, castHeight = 0.5) {
+  const from = objY + castHeight
+  const below = surfaceYs.filter((y) => y <= from).sort((a, b) => b - a)
+  return below.length ? below[0] : objY // nothing under it: leave it alone
+}
+
+// dropped slightly above a table -> lands exactly on it
+assert.equal(snapToSurface(0.78, [0.75, 0]), 0.75, 'snaps down onto the table')
+// dropped slightly below -> lifted back onto the surface, never sunk into it
+assert.equal(snapToSurface(0.72, [0.75, 0]), 0.75, 'lifted out of the table top')
+// table and floor both present -> takes the nearest surface above the floor
+assert.equal(snapToSurface(0.74, [0.75, 0]), 0.75, 'picks the table, not the floor')
+// far above everything -> falls to the floor rather than hanging in the air
+assert.equal(snapToSurface(0.2, [0]), 0, 'falls to the floor')
+// no surfaces detected yet -> hold position rather than teleport to y=0
+assert.equal(snapToSurface(0.9, []), 0.9, 'no surface: object is left untouched')
+
+console.log('surface snap ok')
