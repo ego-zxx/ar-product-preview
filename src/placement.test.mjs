@@ -104,3 +104,18 @@ assert.ok(!/scale=\{[^}]*distance/i.test(scene), 'product scale must not depend 
 assert.ok(!/lookAt\(/.test(scene), 'products must not billboard toward the camera')
 
 console.log('real-world scale ok')
+
+// --- product page turntable orbit ---
+// Pitch must stop short of straight up/down, where a turntable flips over.
+const PITCH_MIN = -0.45, PITCH_MAX = 1.25
+const clampPitch = (p) => Math.min(PITCH_MAX, Math.max(PITCH_MIN, p))
+
+assert.equal(clampPitch(0.5), 0.5, 'a normal tilt passes through')
+assert.equal(clampPitch(99), PITCH_MAX, 'dragging far up stops at the limit')
+assert.equal(clampPitch(-99), PITCH_MIN, 'dragging far down stops at the limit')
+assert.ok(PITCH_MAX < Math.PI / 2, 'never reaches straight down, which would flip the view')
+assert.ok(PITCH_MIN > -Math.PI / 2, 'never reaches straight up either')
+// looking down into an open vessel has to be reachable, or the preview is 2D
+assert.ok(PITCH_MAX > 1.0, 'can tilt far enough to see into a cup from above')
+
+console.log('turntable orbit ok')

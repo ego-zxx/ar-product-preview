@@ -1,8 +1,7 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { PMREMGenerator, type Group } from 'three'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
-import { useEffect } from 'react'
 import { Model } from './ARScene'
 import type { Product } from './products'
 
@@ -22,20 +21,53 @@ function StudioEnv() {
   return null
 }
 
-/** Idles on a slow spin; a drag takes over and the spin resumes on release. */
-function Turntable({ product, spinRef }: { product: Product; spinRef: React.RefObject<number> }) {
-  const ref = useRef<Group>(null)
+/**
+ * Turntable with two axes. Everything is driven from refs inside the frame
+ * loop — reading a ref during render never updates, which is why dragging
+ * previously appeared frozen.
+ *
+ * Nested groups rather than one Euler rotation: the outer group pitches, the
+ * inner yaws, so the model orbits like a turntable instead of tumbling.
+ */
+function Turntable({ product, ctrl }: { product: Product; ctrl: React.RefObject<Orbit> }) {
+  const pitchRef = useRef<Group>(null)
+  const yawRef = useRef<Group>(null)
+  const height = product.url === 'builtin:cup' ? 0.095 : 0.2
+
   useFrame((_s, delta) => {
-    if (!ref.current) return
-    spinRef.current += delta * 0.45
-    ref.current.rotation.y = spinRef.current
+    const c = ctrl.current
+    if (!c.dragging) c.targetYaw += delta * 0.45
+    // ease toward the target, frame-rate independent
+    const k = 1 - Math.exp(-14 * delta)
+    c.yaw += (c.targetYaw - c.yaw) * k
+    c.pitch += (c.targetPitch - c.pitch) * k
+    if (pitchRef.current) pitchRef.current.rotation.x = c.pitch
+    if (yawRef.current) yawRef.current.rotation.y = c.yaw
   })
+
   return (
-    <group ref={ref}>
-      <Model product={product} />
+    <group ref={pitchRef}>
+      <group ref={yawRef}>
+        {/* centre the model on the origin so it orbits about its middle */}
+        <group position={[0, -height / 2, 0]}>
+          <Model product={product} />
+        </group>
+      </group>
     </group>
   )
 }
+
+export type Orbit = {
+  yaw: number
+  pitch: number
+  targetYaw: number
+  targetPitch: number
+  dragging: boolean
+}
+
+/** Stop short of straight up/down, where a turntable flips and feels broken. */
+const PITCH_MIN = -0.45
+const PITCH_MAX = 1.25
 
 export function ProductPage({
   product,
@@ -48,9 +80,14 @@ export function ProductPage({
   onViewInSpace: () => void
   arSupported: boolean | null
 }) {
-  const spin = useRef(0)
-  const drag = useRef<{ x: number; from: number } | null>(null)
-  const [spinning, setSpinning] = useState(true)
+  const ctrl = useRef<Orbit>({
+    yaw: 0,
+    pitch: 0.25,
+    targetYaw: 0,
+    targetPitch: 0.25,
+    dragging: false,
+  })
+  const drag = useRef<{ x: number; y: number; yaw: number; pitch: number } | null>(null)
 
   // The model is authored in metres, so frame the camera to its real height.
   const height = product.url === 'builtin:cup' ? 0.095 : 0.2
@@ -64,34 +101,37 @@ export function ProductPage({
       <div
         className="turntable"
         onPointerDown={(e) => {
-          drag.current = { x: e.clientX, from: spin.current }
-          setSpinning(false)
+          const c = ctrl.current
+          drag.current = { x: e.clientX, y: e.clientY, yaw: c.targetYaw, pitch: c.targetPitch }
+          c.dragging = true
           ;(e.target as Element).setPointerCapture?.(e.pointerId)
         }}
         onPointerMove={(e) => {
-          if (!drag.current) return
-          spin.current = drag.current.from + (e.clientX - drag.current.x) * 0.01
+          const d = drag.current
+          if (!d) return
+          const c = ctrl.current
+          c.targetYaw = d.yaw + (e.clientX - d.x) * 0.012
+          c.targetPitch = Math.min(
+            PITCH_MAX,
+            Math.max(PITCH_MIN, d.pitch + (e.clientY - d.y) * 0.012),
+          )
         }}
         onPointerUp={() => {
           drag.current = null
-          setSpinning(true)
+          ctrl.current.dragging = false
+        }}
+        onPointerCancel={() => {
+          drag.current = null
+          ctrl.current.dragging = false
         }}
       >
         <Canvas camera={{ position: [0, height * 0.9, height * 3.2], fov: 35 }}>
           <StudioEnv />
           <ambientLight intensity={0.4} />
           <directionalLight position={[2, 4, 3]} intensity={1.3} />
-          <group position={[0, -height / 2, 0]}>
-            {spinning ? (
-              <Turntable product={product} spinRef={spin} />
-            ) : (
-              <group rotation-y={spin.current}>
-                <Model product={product} />
-              </group>
-            )}
-          </group>
+          <Turntable product={product} ctrl={ctrl} />
         </Canvas>
-        <span className="turntable-hint">Drag to turn</span>
+        <span className="turntable-hint">Drag to turn · up and down to tilt</span>
       </div>
 
       <h1 className="title" style={{ marginBottom: 0 }}>
