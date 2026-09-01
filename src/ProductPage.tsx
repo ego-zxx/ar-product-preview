@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { PMREMGenerator, type Group } from 'three'
+import { Box3, PMREMGenerator, Vector3, type Group, type PerspectiveCamera } from 'three'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { Model } from './ARScene'
 import type { Product } from './products'
@@ -32,12 +32,48 @@ function StudioEnv() {
 function Turntable({ product, ctrl }: { product: Product; ctrl: React.RefObject<Orbit> }) {
   const pitchRef = useRef<Group>(null)
   const yawRef = useRef<Group>(null)
-  const height = product.url === 'builtin:cup' ? 0.095 : 0.2
+  const modelRef = useRef<Group>(null)
+  const framed = useRef(false)
+  const camera = useThree((s) => s.camera) as PerspectiveCamera
+
+  // Measure the model and frame the camera to it. Guessing a height cannot work
+  // for uploaded models — anything smaller than the guess falls outside the
+  // frustum and the preview looks empty.
+  //
+  // Deliberately not in useFrame: the model arrives via Suspense at an unknown
+  // time, and a paused render loop would leave the preview permanently blank.
+  useEffect(() => {
+    framed.current = false
+    let stop = false
+    const measure = () => {
+      if (stop || !modelRef.current) return
+      const box = new Box3().setFromObject(modelRef.current)
+      if (box.isEmpty()) {
+        setTimeout(measure, 100) // still loading
+        return
+      }
+      const size = box.getSize(new Vector3())
+      const centre = box.getCenter(new Vector3())
+      // sit the model's centre on the origin so it orbits about itself
+      modelRef.current.position.sub(centre)
+      const radius = Math.max(size.x, size.y, size.z) * 0.5
+      const dist = radius / Math.tan((camera.fov * Math.PI) / 360)
+      camera.position.set(0, radius * 0.55, dist * 2.1)
+      camera.lookAt(0, 0, 0)
+      camera.near = dist / 100
+      camera.far = dist * 20
+      camera.updateProjectionMatrix()
+      framed.current = true
+    }
+    measure()
+    return () => {
+      stop = true
+    }
+  }, [product.id, camera])
 
   useFrame((_s, delta) => {
     const c = ctrl.current
     if (!c.dragging) c.targetYaw += delta * 0.45
-    // ease toward the target, frame-rate independent
     const k = 1 - Math.exp(-14 * delta)
     c.yaw += (c.targetYaw - c.yaw) * k
     c.pitch += (c.targetPitch - c.pitch) * k
@@ -48,8 +84,7 @@ function Turntable({ product, ctrl }: { product: Product; ctrl: React.RefObject<
   return (
     <group ref={pitchRef}>
       <group ref={yawRef}>
-        {/* centre the model on the origin so it orbits about its middle */}
-        <group position={[0, -height / 2, 0]}>
+        <group ref={modelRef}>
           <Model product={product} />
         </group>
       </group>
@@ -89,9 +124,6 @@ export function ProductPage({
   })
   const drag = useRef<{ x: number; y: number; yaw: number; pitch: number } | null>(null)
 
-  // The model is authored in metres, so frame the camera to its real height.
-  const height = product.url === 'builtin:cup' ? 0.095 : 0.2
-
   return (
     <div className="page">
       <button className="btn-ghost" style={{ marginTop: 8 }} onClick={onBack}>
@@ -125,7 +157,7 @@ export function ProductPage({
           ctrl.current.dragging = false
         }}
       >
-        <Canvas camera={{ position: [0, height * 0.9, height * 3.2], fov: 35 }}>
+        <Canvas camera={{ fov: 35, position: [0, 0.1, 0.4] }}>
           <StudioEnv />
           <ambientLight intensity={0.4} />
           <directionalLight position={[2, 4, 3]} intensity={1.3} />
