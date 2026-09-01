@@ -2,15 +2,36 @@
 // Guards the placement maths that has no other safety net.
 import assert from 'node:assert/strict'
 
-// --- mirrors the rotate maths in ARScene.tsx's frame loop ---
-const yawFromDrag = (startYaw, startX, currentX) => startYaw - (currentX - startX) * 0.012
+// --- two-finger twist (mirrors yawFromTwist in ARScene.tsx) ---
+const yawFromTwist = (startYaw, startTwist, twist) => startYaw - (twist - startTwist)
+const twistOf = (a, b) => Math.atan2(b.y - a.y, b.x - a.x)
 
-assert.equal(yawFromDrag(0, 100, 100), 0, 'no drag = no rotation')
-assert.ok(yawFromDrag(0, 100, 200) < 0, 'drag right turns one way')
-assert.ok(yawFromDrag(0, 100, 0) > 0, 'drag left turns the other')
-assert.equal(yawFromDrag(1, 50, 50), 1, 'rotation accumulates from the drag start')
-const sweep = Math.abs(yawFromDrag(0, 0, 390))
-assert.ok(sweep > Math.PI / 2 && sweep < Math.PI * 2, `a screen-width sweep is usable, got ${sweep} rad`)
+assert.equal(yawFromTwist(0, 0, 0), 0, 'no twist = no rotation')
+assert.equal(yawFromTwist(1.2, 0.5, 0.5), 1.2, 'rotation accumulates from where the twist began')
+// a quarter turn of the fingers is a quarter turn of the object, 1:1
+const flat = twistOf({ x: 0, y: 0 }, { x: 100, y: 0 })
+const quarter = twistOf({ x: 0, y: 0 }, { x: 0, y: 100 })
+assert.ok(
+  Math.abs(Math.abs(yawFromTwist(0, flat, quarter)) - Math.PI / 2) < 1e-9,
+  'a 90 degree finger twist rotates the object 90 degrees',
+)
+// opposite twists must rotate opposite ways
+const back = twistOf({ x: 0, y: 0 }, { x: 0, y: -100 })
+assert.ok(
+  Math.sign(yawFromTwist(0, flat, quarter)) !== Math.sign(yawFromTwist(0, flat, back)),
+  'twisting the other way rotates the other way',
+)
+// which finger the browser reports first must not flip the direction
+assert.equal(twistOf({ x: 0, y: 0 }, { x: 100, y: 0 }), 0, 'reference twist is zero')
+
+// --- drag smoothing: exponential damping, frame-rate independent ---
+const damp = (from, to, dt) => from + (to - from) * (1 - Math.exp(-18 * dt))
+assert.ok(damp(0, 1, 1 / 60) > 0 && damp(0, 1, 1 / 60) < 1, 'eases rather than snapping')
+assert.ok(damp(0, 1, 1 / 30) > damp(0, 1, 1 / 60), 'a longer frame moves further')
+// two 60fps steps land close to one 30fps step: motion is not frame-rate dependent
+const twoSteps = damp(damp(0, 1, 1 / 60), 1, 1 / 60)
+assert.ok(Math.abs(twoSteps - damp(0, 1, 1 / 30)) < 0.01, 'damping is frame-rate independent')
+assert.ok(damp(0, 1, 10) > 0.999, 'a long stall still converges, never overshoots')
 
 // --- ray/plane projection used by drag-to-move ---
 // Ray from the camera through a screen point, hitting the horizontal plane the

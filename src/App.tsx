@@ -8,6 +8,7 @@ import {
 } from './ARScene'
 import { useAccess } from './access'
 import { fetchProducts, type Product } from './products'
+import { ProductPage } from './ProductPage'
 
 const overlayRoot = document.getElementById('ar-overlay')!
 const store = createXRStore({
@@ -60,6 +61,7 @@ export function App() {
   const [confirmClear, setConfirmClear] = useState(false)
   const [hasSurface, setHasSurface] = useState(false)
   const [uiHidden, setUiHidden] = useState(false)
+  const [route, setRoute] = useState(() => location.hash)
   const uiHiddenRef = useRef(false)
   uiHiddenRef.current = uiHidden
   const commitRef = useRef<(() => void) | null>(null)
@@ -78,11 +80,14 @@ export function App() {
       setProductId((s) => s ?? p[0]?.id ?? null)
     })
     // Surface anything that would otherwise silently kill the AR frame loop.
+    const onHash = () => setRoute(location.hash)
+    addEventListener('hashchange', onHash)
     const onErr = (e: ErrorEvent) => setError(e.message)
     const onRej = (e: PromiseRejectionEvent) => setError(String(e.reason))
     addEventListener('error', onErr)
     addEventListener('unhandledrejection', onRej)
     return () => {
+      removeEventListener('hashchange', onHash)
       removeEventListener('error', onErr)
       removeEventListener('unhandledrejection', onRej)
     }
@@ -182,33 +187,45 @@ export function App() {
   }, [objects])
 
   // One finger drags the object across the surface, two fingers rotate it.
+  /**
+   * One finger drags, two fingers twist. The twist is read from the ANGLE
+   * between the two fingers — deriving it from one finger's x, as this did
+   * before, means whichever finger moved last wins and rotation is erratic.
+   */
+  const syncGesture = () => {
+    const g = gestureRef.current
+    const pts = [...pointers.values()]
+    if (pts.length >= 2) {
+      const [a, b] = pts
+      g.twist = Math.atan2(b.y - a.y, b.x - a.x)
+      g.mode = 'rotate' // Placement snapshots startTwist/startYaw on the change
+    } else if (pts.length === 1) {
+      g.x = pts[0].x
+      g.y = pts[0].y
+      g.mode = 'move'
+    } else {
+      g.mode = 'none'
+    }
+  }
+
   const gestureHandlers = {
     onPointerDown: (e: React.PointerEvent) => {
       ;(e.target as Element).setPointerCapture?.(e.pointerId)
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
-      const g = gestureRef.current
-      g.x = e.clientX
-      g.y = e.clientY
-      if (pointers.size >= 2) {
-        g.mode = 'rotate' // Placement snapshots startX/startYaw on the transition
-      } else {
-        g.mode = 'move'
-      }
+      syncGesture()
     },
     onPointerMove: (e: React.PointerEvent) => {
       if (!pointers.has(e.pointerId)) return
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
-      const g = gestureRef.current
-      g.x = e.clientX
-      g.y = e.clientY
+      syncGesture()
     },
     onPointerUp: (e: React.PointerEvent) => {
       pointers.delete(e.pointerId)
-      if (pointers.size === 0) gestureRef.current.mode = 'none'
+      syncGesture()
     },
     onPointerCancel: (e: React.PointerEvent) => {
       pointers.delete(e.pointerId)
-      if (pointers.size === 0) gestureRef.current.mode = 'none'
+      syncGesture()
     },
   }
 
@@ -217,8 +234,26 @@ export function App() {
     gestureRef.current.suppressSelectUntil = performance.now() + 600
   }
 
+  const routed = route.startsWith('#/product/')
+    ? products.find((p) => p.id === route.slice('#/product/'.length))
+    : null
+
   return (
     <>
+      {routed ? (
+        <ProductPage
+          product={routed}
+          arSupported={supported}
+          onBack={() => {
+            location.hash = ''
+          }}
+          onViewInSpace={() => {
+            setProductId(routed.id)
+            location.hash = ''
+            store.enterAR()
+          }}
+        />
+      ) : (
       <div className="page">
         <h1 className="title">Preview</h1>
 
@@ -269,7 +304,10 @@ export function App() {
                   key={p.id}
                   className="card"
                   data-on={p.id === productId}
-                  onClick={() => setProductId(p.id)}
+                  onClick={() => {
+                    setProductId(p.id)
+                    location.hash = `#/product/${p.id}`
+                  }}
                 >
                   <div className="card-thumb">{p.emoji}</div>
                   <div className="card-name">{p.name}</div>
@@ -322,6 +360,7 @@ export function App() {
           </>
         )}
       </div>
+      )}
 
       {/* Sits behind the UI and must never take pointer events: all interaction
           is DOM (landing/overlay) or XR select. Without this the full-screen

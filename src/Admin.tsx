@@ -54,7 +54,10 @@ export function Admin() {
   const [label, setLabel] = useState('')
   const [qr, setQr] = useState<string | null>(null)
   const [busy, setBusy] = useState('')
-  const [form, setForm] = useState({ name: '', category: 'Faucets', emoji: '🚰', scale: '1' })
+  const [form, setForm] = useState({
+    name: '', category: 'Faucets', emoji: '🚰', scale: '1',
+    price: '', dimensions: '', description: '', specs: '',
+  })
   const fileRef = useRef<HTMLInputElement>(null)
   const [fileName, setFileName] = useState('')
   const [confirm, confirmDialog] = useConfirm()
@@ -161,7 +164,10 @@ export function Admin() {
         body: JSON.stringify({ ...form, url: upJson.url }),
       })
       if (!res.ok) throw new Error((await res.json()).error)
-      setForm({ name: '', category: form.category, emoji: form.emoji, scale: '1' })
+      setForm({
+        ...form, name: '', scale: '1',
+        price: '', dimensions: '', description: '', specs: '',
+      })
       if (fileRef.current) fileRef.current.value = ''
       setFileName('')
       setBusy('')
@@ -413,6 +419,50 @@ export function Admin() {
                 step="0.01"
                 value={form.scale}
                 onChange={(e) => setForm({ ...form, scale: e.target.value })}
+              />
+            </div>
+            <div className="row">
+              <div className="row-title" style={{ flex: 1 }}>Price</div>
+              <input
+                className="field"
+                style={{ flex: 2 }}
+                placeholder="£129"
+                value={form.price}
+                onChange={(e) => setForm({ ...form, price: e.target.value })}
+              />
+            </div>
+            <div className="row">
+              <div className="row-title" style={{ flex: 1 }}>Size</div>
+              <input
+                className="field"
+                style={{ flex: 2 }}
+                placeholder="200 mm H × 100 mm D"
+                value={form.dimensions}
+                onChange={(e) => setForm({ ...form, dimensions: e.target.value })}
+              />
+            </div>
+            <div className="row" style={{ display: 'block' }}>
+              <div className="row-title" style={{ marginBottom: 8 }}>Description</div>
+              <textarea
+                className="field"
+                rows={3}
+                placeholder="What it is, how it looks, where it fits."
+                value={form.description}
+                onChange={(e) => setForm({ ...form, description: e.target.value })}
+              />
+            </div>
+            <div className="row" style={{ display: 'block' }}>
+              <div className="row-title" style={{ marginBottom: 3 }}>Specifications</div>
+              <div className="row-sub" style={{ marginBottom: 8 }}>
+                One per line, as <code>Label: value</code> — finish, material, capacity,
+                calories, warranty, anything.
+              </div>
+              <textarea
+                className="field"
+                rows={4}
+                placeholder={'Finish: Polished chrome\nMaterial: Solid brass\nWarranty: 10 years'}
+                value={form.specs}
+                onChange={(e) => setForm({ ...form, specs: e.target.value })}
               />
             </div>
             <div className="row" style={{ display: 'block' }}>

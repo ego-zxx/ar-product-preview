@@ -415,3 +415,30 @@ a { color: var(--gold); }
 }
 .ar-restore:active { opacity: 1; }
 .ar-restore svg { width: 26px; height: 13px; fill: rgba(255, 255, 255, 0.85); }
+
+/* --- product page --- */
+.turntable {
+  position: relative; margin: 18px 0 6px; height: 300px;
+  border-radius: var(--radius); overflow: hidden; touch-action: none; cursor: grab;
+  background:
+    radial-gradient(70% 55% at 50% 42%, var(--gold-soft), transparent 72%),
+    linear-gradient(165deg, var(--surface-2), transparent);
+  border: 1px solid var(--hairline);
+  box-shadow: var(--shadow), inset 0 1px 0 var(--highlight);
+}
+.turntable:active { cursor: grabbing; }
+.turntable canvas { display: block; }
+.turntable-hint {
+  position: absolute; bottom: 12px; left: 0; right: 0; text-align: center;
+  font: 500 9.5px/1 var(--sans); text-transform: uppercase; letter-spacing: 0.16em;
+  color: var(--label-3); pointer-events: none;
+}
+.price {
+  font: 300 32px/1 var(--serif); color: var(--gold); letter-spacing: -0.01em;
+}
+
+textarea.field { resize: vertical; font: 400 15px/1.5 var(--sans); }
+code {
+  font: 400 12.5px ui-monospace, SFMono-Regular, monospace;
+  background: var(--fill); padding: 1px 5px; border-radius: 4px;
+}

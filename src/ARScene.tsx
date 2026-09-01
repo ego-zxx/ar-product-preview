@@ -41,16 +41,23 @@ export const MAX_OBJECTS = 20
  */
 export type Gesture = {
   mode: 'none' | 'move' | 'rotate'
+  /** primary finger, for dragging */
   x: number
   y: number
-  startX: number
+  /** angle between two fingers, for twisting */
+  twist: number
+  startTwist: number
   startYaw: number
   /** overlay buttons also emit an XR select; ignore selects until this time */
   suppressSelectUntil: number
 }
 export const newGesture = (): Gesture => ({
-  mode: 'none', x: 0, y: 0, startX: 0, startYaw: 0, suppressSelectUntil: 0,
+  mode: 'none', x: 0, y: 0, twist: 0, startTwist: 0, startYaw: 0, suppressSelectUntil: 0,
 })
+
+/** Twist delta -> yaw. Screen y grows downward, so a clockwise twist is +angle. */
+export const yawFromTwist = (startYaw: number, startTwist: number, twist: number) =>
+  startYaw - (twist - startTwist)
 
 export function Env() {
   const { gl, scene } = useThree()
@@ -346,6 +353,7 @@ export function Placement({
   const raycaster = useRef(new Raycaster()).current
   const centre = useRef(new Vector2(0, 0)).current
   const downRay = useRef(new Raycaster()).current
+  const dragTarget = useRef(new Vector3()).current
   const above = useRef(new Vector3()).current
   const DOWN = useRef(new Vector3(0, -1, 0)).current
 
@@ -366,7 +374,7 @@ export function Placement({
     'plane',
   )
 
-  useFrame((_s, _d, frame) => {
+  useFrame((_s, delta, frame) => {
     if (hasHit.current !== lastSurface.current) {
       lastSurface.current = hasHit.current
       onSurface(hasHit.current)
@@ -382,13 +390,13 @@ export function Placement({
       // On entering rotate, snapshot the current yaw here — App can't see it.
       if (g.mode !== lastMode.current) {
         if (g.mode === 'rotate') {
-          g.startX = g.x
+          g.startTwist = g.twist
           g.startYaw = draftYaw.current
         }
         lastMode.current = g.mode
       }
       if (g.mode === 'rotate') {
-        draftYaw.current = g.startYaw - (g.x - g.startX) * 0.012
+        draftYaw.current = yawFromTwist(g.startYaw, g.startTwist, g.twist)
       } else if (g.mode === 'move' && surfaces.size) {
         // Drag onto a REAL detected surface, never an imaginary plane. If the
         // finger isn't over one, the object simply doesn't move — an object
@@ -396,8 +404,12 @@ export function Placement({
         centre.set((g.x / window.innerWidth) * 2 - 1, -(g.y / window.innerHeight) * 2 + 1)
         raycaster.setFromCamera(centre, camera)
         const hits = raycaster.intersectObjects([...surfaces], false)
-        if (hits.length) draftPos.copy(hits[0].point)
+        // Ease toward the target instead of snapping to it. The plane meshes
+        // are re-estimated by ARCore constantly, so the raw hit point jitters;
+        // exponential damping is frame-rate independent.
+        if (hits.length) dragTarget.copy(hits[0].point)
       }
+      if (g.mode === 'move') draftPos.lerp(dragTarget, 1 - Math.exp(-18 * delta))
     }
 
     // Sit it on the surface. Cast straight down from just above the object onto
@@ -474,6 +486,7 @@ export function Placement({
       }
       if (picked == null) {
         draftPos.copy(hitPos)
+        dragTarget.copy(hitPos)
         draftYaw.current = 0
       }
       onTap(picked)

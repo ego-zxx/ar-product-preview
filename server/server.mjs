@@ -116,7 +116,7 @@ const routes = {
   },
   'GET /api/products': () => [200, db.products],
   'POST /api/admin/products': (body) => {
-    const { name, category, url, emoji, scale } = body
+    const { name, category, url, emoji, scale, price, description, dimensions, specs } = body
     if (!name || !url) return [400, { error: 'name and url required' }]
     const p = {
       id: randomBytes(6).toString('hex'),
@@ -125,6 +125,17 @@ const routes = {
       url,
       emoji: emoji || '\u{1F6C1}',
       scale: Number(scale) > 0 ? Number(scale) : 1,
+      price: String(price ?? '').trim().slice(0, 40),
+      description: String(description ?? '').trim().slice(0, 1200),
+      dimensions: String(dimensions ?? '').trim().slice(0, 120),
+      // free-form "Label: value" lines — covers material, finish, warranty,
+      // calories, whatever a given catalogue needs, without new columns
+      specs: String(specs ?? '')
+        .split('\n')
+        .map((line) => line.split(/:(.*)/s))
+        .filter(([k, v]) => k?.trim() && v?.trim())
+        .slice(0, 20)
+        .map(([k, v]) => ({ label: k.trim().slice(0, 40), value: v.trim().slice(0, 80) })),
     }
     db.products.push(p)
     save()
