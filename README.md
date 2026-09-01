@@ -25,11 +25,11 @@ not, so it needs HTTPS.
   LAN IP — Chrome on Android rejects a cert without one outright.
 
   ```bash
-  openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
-    -keyout certs/key.pem -out certs/cert.pem \
-    -subj "/CN=192.168.1.83" \
-    -addext "subjectAltName=IP:192.168.1.83,IP:127.0.0.1,DNS:localhost"
+  ./tools/make-cert.sh
   ```
+
+  Re-run it whenever DHCP changes the machine's IP — the certificate must name
+  the exact address being visited or Chrome refuses it with no way through.
 
   `vite.config.ts` picks `certs/` up automatically. Set `NO_SSL=1` for plain
   HTTP (the USB route).

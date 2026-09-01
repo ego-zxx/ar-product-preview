@@ -423,7 +423,7 @@ export function App() {
                     ? 'Selected'
                     : objects.length === 0
                       ? `Tap to place ${selected?.name ?? ''}`
-                      : `${objects.length} placed`}
+                      : `${objects.length} placed · tap one to adjust`}
               </span>
               {!hasSurface && !draft && (
                 <span className="pill" data-quiet="true" style={{ color: 'var(--orange)' }}>

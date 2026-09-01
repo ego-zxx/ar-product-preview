@@ -45,6 +45,12 @@ export type Draft = { product: Product }
 export const MAX_OBJECTS = 20
 
 /**
+ * How far from the tap ray an object can sit and still be selected, in metres.
+ * Requiring a direct hit on a small product is unusable on a handheld phone.
+ */
+export const SELECT_TOLERANCE = 0.14
+
+/**
  * Live gesture state, written by the DOM overlay and read in the frame loop so
  * dragging never triggers a React render.
  */
@@ -214,12 +220,21 @@ function ContactShadow({ radius = 0.075 }: { radius?: number }) {
   )
 }
 
-function SelectionRing() {
+/**
+ * Base ring. Bright when selected; a faint one otherwise, so a placed object
+ * reads as tappable — without it nothing on screen says the objects can be
+ * picked up again.
+ */
+function SelectionRing({ selected = true, hidden = false }: { selected?: boolean; hidden?: boolean }) {
+  if (hidden) return null
   return (
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.002, 0]}>
-      <ringGeometry args={[0.1, 0.115, 48]} />
+      <ringGeometry args={selected ? [0.1, 0.115, 48] : [0.085, 0.091, 48]} />
       <meshBasicMaterial
-        color="#c9a227" side={DoubleSide} transparent opacity={0.95}
+        color="#c9a227"
+        side={DoubleSide}
+        transparent
+        opacity={selected ? 0.95 : 0.3}
         userData={{ noOcclusion: true }}
       />
     </mesh>
@@ -227,9 +242,9 @@ function SelectionRing() {
 }
 
 function FixedPlacement({
-  matrix, yaw, product, selected, innerRef,
+  matrix, yaw, product, selected, hidden, innerRef,
 }: {
-  matrix: Matrix4; yaw: number; product: Product; selected: boolean
+  matrix: Matrix4; yaw: number; product: Product; selected: boolean; hidden: boolean
   innerRef: (o: Object3D | null) => void
 }) {
   const pos = useRef(new Vector3()).current
@@ -242,7 +257,7 @@ function FixedPlacement({
     <group ref={innerRef} position={pos} quaternion={quat}>
       <group rotation-y={yaw}>
         <Model product={product} />
-        {selected && <SelectionRing />}
+        <SelectionRing selected={selected} hidden={hidden} />
       </group>
     </group>
   )
@@ -290,6 +305,9 @@ export function Placement({
   /** read in the select handler, which must not close over a stale prop */
   const draftLive = useRef<Draft | null>(null)
   draftLive.current = draft
+  const rayOrigin = useRef(new Vector3()).current
+  const rayDir = useRef(new Vector3()).current
+  const objPos = useRef(new Vector3()).current
 
   // Draft pose lives here, not in React state: dragging updates it every frame.
   const draftPos = useRef(new Vector3()).current
@@ -429,7 +447,7 @@ export function Placement({
   useXRInputSourceEvent(
     'all',
     'select',
-    () => {
+    (event) => {
       // A tap on an overlay button also arrives here; without this, pressing
       // Deselect immediately re-selects whatever is under the reticle.
       const g = gestureRef.current
@@ -440,9 +458,20 @@ export function Placement({
       if (draftLive.current) return
       if (!hasHit.current) return
 
-      // Real raycast against placed objects — a fixed proximity radius made
-      // every tap near the first object select it instead of placing a new one.
-      raycaster.setFromCamera(centre.set(0, 0), camera)
+      // Aim the pick where the FINGER touched, not at the screen centre.
+      // Picking down the centre line meant selecting an object required
+      // pointing the whole phone at it rather than simply tapping it.
+      const refSpace = gl.xr.getReferenceSpace()
+      const pose = refSpace ? event.frame?.getPose(event.inputSource.targetRaySpace, refSpace) : null
+      if (pose) {
+        const { position: pp, orientation: po } = pose.transform
+        rayOrigin.set(pp.x, pp.y, pp.z)
+        rayDir.set(0, 0, -1).applyQuaternion(new Quaternion(po.x, po.y, po.z, po.w))
+        raycaster.set(rayOrigin, rayDir)
+      } else {
+        raycaster.setFromCamera(centre.set(0, 0), camera)
+      }
+
       let picked: number | null = null
       let nearest = Infinity
       for (const [id, obj] of placedRefs) {
@@ -450,6 +479,21 @@ export function Placement({
         if (hits.length && hits[0].distance < nearest) {
           nearest = hits[0].distance
           picked = id
+        }
+      }
+      // A tap near a small object should still find it: fall back to the object
+      // closest to the ray. Hitting a 4cm faucet spout exactly is not realistic
+      // on a handheld phone.
+      if (picked == null) {
+        let closest = SELECT_TOLERANCE
+        for (const [id, obj] of placedRefs) {
+          obj.getWorldPosition(objPos)
+          if (raycaster.ray.origin.distanceTo(objPos) > 6) continue // ignore far scenery
+          const d = raycaster.ray.distanceToPoint(objPos)
+          if (d < closest) {
+            closest = d
+            picked = id
+          }
         }
       }
       if (picked == null) {
@@ -499,7 +543,7 @@ export function Placement({
           <XRSpace key={o.id} space={space}>
             <group ref={setRef} rotation-y={o.yaw}>
               <Model product={o.product} />
-              {selectedId === o.id && <SelectionRing />}
+              <SelectionRing selected={selectedId === o.id} hidden={uiHidden} />
             </group>
           </XRSpace>
         ) : o.matrix ? (
@@ -509,6 +553,7 @@ export function Placement({
             yaw={o.yaw}
             product={o.product}
             selected={selectedId === o.id}
+            hidden={uiHidden}
             innerRef={setRef}
           />
         ) : null

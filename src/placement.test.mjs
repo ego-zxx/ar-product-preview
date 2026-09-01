@@ -198,3 +198,35 @@ for (let gesture = 0; gesture < 5; gesture++) {
 assert.ok(held > Math.PI * 2, `five gestures accumulate past a full turn, got ${held} rad`)
 
 console.log('draft pose retention ok')
+
+// --- selecting a placed object ---
+// Picking used to raycast down the screen's centre line, so choosing an object
+// meant aiming the whole phone at it rather than tapping it. Picking now
+// follows the finger's ray, with a tolerance — demanding a direct hit on a
+// 4cm spout is not achievable handheld.
+const SELECT_TOLERANCE = 0.14
+
+/** Perpendicular distance from a point to a ray (normalised direction). */
+function distanceToRay(origin, dir, point) {
+  const v = [point[0] - origin[0], point[1] - origin[1], point[2] - origin[2]]
+  const t = v[0] * dir[0] + v[1] * dir[1] + v[2] * dir[2]
+  const proj = [origin[0] + dir[0] * t, origin[1] + dir[1] * t, origin[2] + dir[2] * t]
+  return Math.hypot(point[0] - proj[0], point[1] - proj[1], point[2] - proj[2])
+}
+
+const eye = [0, 0, 0]
+const forward = [0, 0, -1]
+// dead on
+assert.ok(distanceToRay(eye, forward, [0, 0, -1]) < 1e-9, 'a direct hit selects')
+// a near miss still selects — this is the whole point of the tolerance
+assert.ok(distanceToRay(eye, forward, [0.10, 0, -1]) < SELECT_TOLERANCE, '10cm off still selects')
+// but a clearly different object does not get grabbed by accident
+assert.ok(distanceToRay(eye, forward, [0.4, 0, -1]) > SELECT_TOLERANCE, '40cm off does not select')
+// tolerance is perpendicular, so it does not widen with distance in a way that
+// makes far objects greedy
+assert.ok(
+  Math.abs(distanceToRay(eye, forward, [0.2, 0, -3]) - 0.2) < 1e-9,
+  'tolerance is a true perpendicular distance, not an angle',
+)
+
+console.log('selection tolerance ok')
