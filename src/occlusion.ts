@@ -17,14 +17,23 @@ export const occlusionUniforms = {
   uDepthUv: { value: new Matrix4() },
   uRawToMeters: { value: 0.001 },
   uResolution: { value: [1, 1] as [number, number] },
-  /** metres of slack, so a surface doesn't clip the object resting on it */
-  uBias: { value: 0.035 },
+  /**
+   * Metres of slack before the real world is allowed to hide a fragment.
+   * The depth buffer is ~160x90 for a 1080p screen and noisy, and an object
+   * resting on a surface is at almost the same depth as that surface — a small
+   * bias lets noise eat holes in the object. Only occlude when something is
+   * clearly in front.
+   */
+  uBias: { value: 0.12 },
+  /** one depth texel, for neighbour taps */
+  uTexel: { value: [1 / 160, 1 / 90] as [number, number] },
   uEnabled: { value: 0 },
 }
 
 // The only way to inspect the depth path is on a real device over the
 // DevTools protocol, so the uniforms are reachable by name.
 ;(globalThis as Record<string, unknown>).__occlusion = () => occlusionStatus()
+;(globalThis as Record<string, unknown>).__occlusionUniforms = occlusionUniforms
 
 let texture: DataTexture | null = null
 let lastW = 0
@@ -36,6 +45,8 @@ export const occlusionStatus = () => ({
   size: `${lastW}x${lastH}`,
   rawToMeters: occlusionUniforms.uRawToMeters.value,
   error: lastError,
+  materialsPatched: patchedCount,
+  shadersCompiled: compiledCount,
 })
 
 /** Feed one frame's depth buffer in. Returns false when depth isn't available. */
@@ -76,6 +87,7 @@ export function updateOcclusion(
   }
   texture.needsUpdate = true
 
+  occlusionUniforms.uTexel.value = [1 / width, 1 / height]
   occlusionUniforms.uDepthUv.value.fromArray(info.normDepthBufferFromNormView.matrix)
   occlusionUniforms.uRawToMeters.value = info.rawValueToMeters
   occlusionUniforms.uResolution.value = [drawWidth, drawHeight]
@@ -84,13 +96,17 @@ export function updateOcclusion(
 }
 
 const patched = new WeakSet<Material>()
+let patchedCount = 0
+let compiledCount = 0
 
 /** Inject the depth test into a material's shader. Safe to call repeatedly. */
 export function patchForOcclusion(material: Material) {
   if (patched.has(material)) return
   patched.add(material)
 
+  patchedCount++
   material.onBeforeCompile = (shader) => {
+    compiledCount++
     Object.assign(shader.uniforms, occlusionUniforms)
 
     shader.vertexShader = shader.vertexShader
@@ -110,7 +126,15 @@ export function patchForOcclusion(material: Material) {
         uniform float uRawToMeters;
         uniform vec2 uResolution;
         uniform float uBias;
-        uniform float uEnabled;`,
+        uniform vec2 uTexel;
+        uniform float uEnabled;
+
+        float realDepthAt(vec2 uv) {
+          if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return 0.0;
+          vec2 packed = texture2D(uDepth, uv).rg;
+          // little-endian uint16 split across the two channels
+          return (packed.r * 255.0 + packed.g * 255.0 * 256.0) * uRawToMeters;
+        }`,
       )
       .replace(
         '#include <dithering_fragment>',
@@ -118,14 +142,24 @@ export function patchForOcclusion(material: Material) {
         if (uEnabled > 0.5) {
           vec2 viewUv = gl_FragCoord.xy / uResolution;
           vec2 depthUv = (uDepthUv * vec4(viewUv, 0.0, 1.0)).xy;
-          if (depthUv.x >= 0.0 && depthUv.x <= 1.0 && depthUv.y >= 0.0 && depthUv.y <= 1.0) {
-            vec2 packed = texture2D(uDepth, depthUv).rg;
-            // little-endian uint16 split across the two channels
-            float raw = packed.r * 255.0 + packed.g * 255.0 * 256.0;
-            float realDepth = raw * uRawToMeters;
-            // realDepth == 0 means the sensor had no reading there
-            if (realDepth > 0.0 && realDepth < vViewDepth - uBias) discard;
+
+          // Sample the texel and its neighbours, and keep the FARTHEST reading.
+          // A single noisy texel then cannot punch a hole in the object: every
+          // tap has to agree the real world is in front before we discard.
+          float farthest = 0.0;
+          float samples = 0.0;
+          vec2 offsets[5];
+          offsets[0] = vec2(0.0, 0.0);
+          offsets[1] = vec2( uTexel.x, 0.0);
+          offsets[2] = vec2(-uTexel.x, 0.0);
+          offsets[3] = vec2(0.0,  uTexel.y);
+          offsets[4] = vec2(0.0, -uTexel.y);
+          for (int i = 0; i < 5; i++) {
+            float d = realDepthAt(depthUv + offsets[i]);
+            if (d > 0.0) { farthest = max(farthest, d); samples += 1.0; }
           }
+          // need most taps to carry real data, else the reading is untrustworthy
+          if (samples >= 4.0 && farthest < vViewDepth - uBias) discard;
         }`,
       )
   }
