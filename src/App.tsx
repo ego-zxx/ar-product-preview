@@ -403,33 +403,44 @@ export function App() {
             {draft && <div className="ar-rotate" {...gestureHandlers} />}
 
             <div className="ar-top">
-              <button className="pill" onPointerDown={muteSelect} onClick={() => store.getState().session?.end()}>
-                Done
+              <button
+                className="ar-icon"
+                aria-label="Exit AR"
+                onPointerDown={muteSelect}
+                onClick={() => store.getState().session?.end()}
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M18.3 5.7a1 1 0 0 0-1.4 0L12 10.6 7.1 5.7a1 1 0 1 0-1.4 1.4l4.9 4.9-4.9 4.9a1 1 0 1 0 1.4 1.4l4.9-4.9 4.9 4.9a1 1 0 0 0 1.4-1.4L13.4 12l4.9-4.9a1 1 0 0 0 0-1.4Z" />
+                </svg>
               </button>
+
               {objects.length > 0 && !draft && selectedId == null && (
                 <button
-                  className="pill"
-                  style={{ marginLeft: 'auto' }}
+                  className="ar-icon"
+                  aria-label="Hide controls"
                   onPointerDown={muteSelect}
                   onClick={() => setUiHidden(true)}
                 >
-                  Clean view
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M12 5c-5 0-9 4.5-10 7 1 2.5 5 7 10 7s9-4.5 10-7c-1-2.5-5-7-10-7Zm0 12a5 5 0 1 1 0-10 5 5 0 0 1 0 10Zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z" />
+                  </svg>
                 </button>
               )}
-              <span className="pill" data-quiet="true">
-                {draft
-                  ? 'Drag to move · two fingers to rotate'
-                  : selectedId != null
-                    ? 'Selected'
-                    : objects.length === 0
-                      ? `Tap to place ${selected?.name ?? ''}`
-                      : `${objects.length} placed · tap one to adjust`}
+            </div>
+
+            {/* One status line, not three competing pills. */}
+            <div className="ar-status">
+              <span className="ar-status-pill" data-warn={!hasSurface && !draft}>
+                {!hasSurface && !draft
+                  ? 'Move the phone slowly to find a surface'
+                  : draft
+                    ? 'Drag to move · two fingers to turn'
+                    : selectedId != null
+                      ? 'Selected'
+                      : objects.length === 0
+                        ? `Tap a surface to place ${selected?.name ?? ''}`
+                        : `${objects.length} placed · tap one to adjust`}
               </span>
-              {!hasSurface && !draft && (
-                <span className="pill" data-quiet="true" style={{ color: 'var(--orange)' }}>
-                  Scanning — move the phone slowly
-                </span>
-              )}
             </div>
 
             {error && <div className="err">{error}</div>}
@@ -446,10 +457,9 @@ export function App() {
                 </div>
               )}
               {confirmClear && (
-                <div className="ar-actions" role="alertdialog" aria-label="Remove everything?">
-                  <span className="pill" data-quiet="true">
-                    Remove all {objects.length}?
-                  </span>
+                <div role="alertdialog" aria-label="Remove everything?">
+                  <div className="ar-prompt">Remove all {objects.length} items?</div>
+                  <div className="ar-actions">
                   <button className="pill" onPointerDown={muteSelect} onClick={() => setConfirmClear(false)}>
                     Keep
                   </button>
@@ -465,6 +475,7 @@ export function App() {
                   >
                     Remove all
                   </button>
+                  </div>
                 </div>
               )}
               {selectedId != null && !confirmClear && (

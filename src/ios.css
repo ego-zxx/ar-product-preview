@@ -213,35 +213,79 @@ body {
 @keyframes rise { from { opacity: 0; transform: translateY(14px) scale(.97) } }
 
 /* --- AR overlay: heavier glass over live camera --- */
-.ar-top, .ar-bottom { position: fixed; left: 0; right: 0; padding: 0 14px; }
-.ar-top { top: calc(env(safe-area-inset-top) + 12px); display: flex; gap: 9px; align-items: center; }
-.ar-bottom { bottom: calc(env(safe-area-inset-bottom) + 16px); }
+.ar-top, .ar-bottom, .ar-status { position: fixed; left: 0; right: 0; padding: 0 16px; }
+.ar-top {
+  top: calc(env(safe-area-inset-top) + 12px);
+  display: flex; justify-content: space-between; align-items: center;
+  pointer-events: none;
+}
+.ar-top > * { pointer-events: auto; }
+.ar-bottom { bottom: calc(env(safe-area-inset-bottom) + 18px); }
+
+/* circular icon control — a label like "Done" costs three times the width
+   once uppercased and letter-spaced, and the meaning is obvious without it */
+.ar-icon {
+  width: 46px; height: 46px; border-radius: 50%; padding: 0;
+  appearance: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--glass);
+  backdrop-filter: blur(30px) saturate(180%);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  border: 1px solid var(--hairline);
+  box-shadow: 0 6px 20px rgba(0,0,0,.35), inset 0 1px 0 var(--highlight);
+  transition: transform .3s cubic-bezier(.34,1.3,.5,1), opacity .3s;
+}
+.ar-icon:active { transform: scale(.92); opacity: .7; }
+.ar-icon svg { width: 21px; height: 21px; fill: var(--label); }
+
+/* a single centred status line: sentence case, because uppercase tracking
+   makes a sentence far too wide for a phone */
+.ar-status {
+  top: calc(env(safe-area-inset-top) + 72px);
+  display: flex; justify-content: center; pointer-events: none;
+}
+.ar-status-pill {
+  max-width: 300px; text-align: center;
+  font: 400 13px/1.45 var(--sans); letter-spacing: 0.01em;
+  color: var(--label);
+  background: var(--glass);
+  backdrop-filter: blur(30px) saturate(180%);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  border: 1px solid var(--hairline);
+  border-radius: 16px; padding: 9px 16px;
+  box-shadow: 0 6px 20px rgba(0,0,0,.3), inset 0 1px 0 var(--highlight);
+}
+.ar-status-pill[data-warn="true"] { color: var(--orange); }
 
 .pill {
   background: var(--glass);
-  backdrop-filter: blur(34px) saturate(190%);
-  -webkit-backdrop-filter: blur(34px) saturate(190%);
+  backdrop-filter: blur(30px) saturate(180%);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
   border: 1px solid var(--hairline);
-  box-shadow: 0 8px 26px rgba(0,0,0,.4), inset 0 1px 0 var(--highlight);
-  color: var(--label); font: 500 12px/1 var(--sans);
-  text-transform: uppercase; letter-spacing: 0.12em;
-  border-radius: 999px; padding: 14px 20px; appearance: none; cursor: pointer;
+  box-shadow: 0 6px 22px rgba(0,0,0,.35), inset 0 1px 0 var(--highlight);
+  color: var(--label); font: 500 11px/1 var(--sans);
+  text-transform: uppercase; letter-spacing: 0.11em;
+  border-radius: 999px; padding: 16px 20px; appearance: none; cursor: pointer;
+  min-height: 46px;
+  transition: transform .3s cubic-bezier(.34,1.3,.5,1), opacity .3s;
 }
+.pill:active { transform: scale(.96); opacity: .75; }
+
 .tray {
   background: var(--glass);
-  backdrop-filter: blur(34px) saturate(190%);
-  -webkit-backdrop-filter: blur(34px) saturate(190%);
+  backdrop-filter: blur(30px) saturate(180%);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
   border: 1px solid var(--hairline);
   box-shadow: 0 -6px 34px rgba(0,0,0,.45), inset 0 1px 0 var(--highlight);
-  border-radius: 24px; padding: 14px;
+  border-radius: 22px; padding: 12px;
 }
 .tray-scroll { display: flex; gap: 10px; overflow-x: auto; scrollbar-width: none; }
 .tray-scroll::-webkit-scrollbar { display: none; }
 .tray-item {
-  flex: 0 0 auto; width: 76px; min-height: 76px; padding: 11px 5px;
+  flex: 0 0 auto; width: 78px; min-height: 78px; padding: 11px 6px;
   border-radius: 15px; background: var(--surface); border: 1px solid var(--hairline);
   color: var(--label-2); font: 500 9px/1.3 var(--sans);
-  text-transform: uppercase; letter-spacing: 0.08em;
+  text-transform: uppercase; letter-spacing: 0.07em;
   text-align: center; appearance: none; cursor: pointer;
   transition: border-color .35s, color .3s, transform .35s cubic-bezier(.34,1.3,.5,1);
 }
@@ -313,11 +357,8 @@ a { color: var(--gold); }
 /* --- AR positioning controls --- */
 .ar-rotate { position: fixed; inset: 0; touch-action: none; z-index: 2; }
 .ar-top, .ar-bottom { z-index: 3; }
-.ar-actions { display: flex; gap: 10px; margin-bottom: 12px; }
+.ar-actions { display: flex; gap: 10px; margin-bottom: 14px; }
 .ar-actions .pill { flex: 1; text-align: center; }
-.pill[data-quiet="true"] {
-  font-weight: 400; text-transform: none; letter-spacing: 0.02em; font-size: 12px;
-}
 .pill[data-primary="true"] {
   background: linear-gradient(150deg, color-mix(in srgb, var(--gold) 92%, white), var(--gold));
   color: var(--on-gold); border-color: transparent;
@@ -442,3 +483,15 @@ code {
   font: 400 12.5px ui-monospace, SFMono-Regular, monospace;
   background: var(--fill); padding: 1px 5px; border-radius: 4px;
 }
+
+/* question above its buttons, rather than a third item competing in the row */
+.ar-prompt {
+  text-align: center; margin-bottom: 12px;
+  font: 400 13px/1.4 var(--sans); color: var(--label);
+  background: var(--glass);
+  backdrop-filter: blur(30px) saturate(180%);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  border: 1px solid var(--hairline); border-radius: 16px; padding: 10px 16px;
+  box-shadow: 0 6px 20px rgba(0,0,0,.3), inset 0 1px 0 var(--highlight);
+}
+.ar-actions .pill { flex: 1; text-align: center; }
