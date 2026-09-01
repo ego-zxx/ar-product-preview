@@ -46,18 +46,21 @@ export type Gesture = {
   y: number
   /** angle between two fingers, for twisting */
   twist: number
-  startTwist: number
-  startYaw: number
   /** overlay buttons also emit an XR select; ignore selects until this time */
   suppressSelectUntil: number
 }
 export const newGesture = (): Gesture => ({
-  mode: 'none', x: 0, y: 0, twist: 0, startTwist: 0, startYaw: 0, suppressSelectUntil: 0,
+  mode: 'none', x: 0, y: 0, twist: 0, suppressSelectUntil: 0,
 })
 
-/** Twist delta -> yaw. Screen y grows downward, so a clockwise twist is +angle. */
-export const yawFromTwist = (startYaw: number, startTwist: number, twist: number) =>
-  startYaw - (twist - startTwist)
+/**
+ * Shortest signed angle from a to b, in (-PI, PI].
+ *
+ * Finger twist comes from atan2, which wraps at +/-PI. Comparing raw angles
+ * caps rotation at half a turn and jumps on the wrap; accumulating the shortest
+ * delta each frame instead allows unlimited rotation in either direction.
+ */
+export const angleDelta = (a: number, b: number) => Math.atan2(Math.sin(b - a), Math.cos(b - a))
 
 export function Env() {
   const { gl, scene } = useThree()
@@ -345,6 +348,9 @@ export function Placement({
   const pendingLock = useRef(false)
   const lastSurface = useRef<boolean | null>(null)
   const lastMode = useRef<Gesture['mode']>('none')
+  const prevTwist = useRef(0)
+  /** offset from the ray hit to the object when a drag began */
+  const grab = useRef(new Vector3()).current
 
   // Draft pose lives here, not in React state: dragging updates it every frame.
   const draftPos = useRef(new Vector3()).current
@@ -374,6 +380,14 @@ export function Placement({
     'plane',
   )
 
+  const surfaceUnderFinger = (g: Gesture) => {
+    if (!surfaces.size) return null
+    centre.set((g.x / window.innerWidth) * 2 - 1, -(g.y / window.innerHeight) * 2 + 1)
+    raycaster.setFromCamera(centre, camera)
+    const hits = raycaster.intersectObjects([...surfaces], false)
+    return hits.length ? hits[0].point : null
+  }
+
   useFrame((_s, delta, frame) => {
     if (hasHit.current !== lastSurface.current) {
       lastSurface.current = hasHit.current
@@ -387,29 +401,34 @@ export function Placement({
     // --- gestures on the live draft ---
     const g = gestureRef.current
     if (draft && g) {
-      // On entering rotate, snapshot the current yaw here — App can't see it.
       if (g.mode !== lastMode.current) {
-        if (g.mode === 'rotate') {
-          g.startTwist = g.twist
-          g.startYaw = draftYaw.current
+        prevTwist.current = g.twist
+        // Grab the object where it is. Without this it jumps to sit under the
+        // finger the moment a drag starts, which reads as teleporting rather
+        // than dragging.
+        if (g.mode === 'move') {
+          const hit = surfaceUnderFinger(g)
+          grab.set(0, 0, 0)
+          if (hit) grab.subVectors(draftPos, hit)
+          dragTarget.copy(draftPos)
         }
         lastMode.current = g.mode
       }
+
       if (g.mode === 'rotate') {
-        draftYaw.current = yawFromTwist(g.startYaw, g.startTwist, g.twist)
+        // Accumulate the shortest delta each frame, so rotation never stops at
+        // half a turn and never jumps when atan2 wraps.
+        draftYaw.current -= angleDelta(prevTwist.current, g.twist)
+        prevTwist.current = g.twist
       } else if (g.mode === 'move' && surfaces.size) {
-        // Drag onto a REAL detected surface, never an imaginary plane. If the
-        // finger isn't over one, the object simply doesn't move — an object
-        // must always be resting on something.
-        centre.set((g.x / window.innerWidth) * 2 - 1, -(g.y / window.innerHeight) * 2 + 1)
-        raycaster.setFromCamera(centre, camera)
-        const hits = raycaster.intersectObjects([...surfaces], false)
-        // Ease toward the target instead of snapping to it. The plane meshes
-        // are re-estimated by ARCore constantly, so the raw hit point jitters;
-        // exponential damping is frame-rate independent.
-        if (hits.length) dragTarget.copy(hits[0].point)
+        // Drag onto a REAL detected surface, never an imaginary plane, keeping
+        // the grab offset so the object travels with the finger.
+        const hit = surfaceUnderFinger(g)
+        if (hit) dragTarget.copy(hit).add(grab)
       }
-      if (g.mode === 'move') draftPos.lerp(dragTarget, 1 - Math.exp(-18 * delta))
+      // Ease toward the target: ARCore re-estimates its planes constantly so the
+      // raw hit point jitters. Damping is frame-rate independent.
+      if (g.mode === 'move') draftPos.lerp(dragTarget, 1 - Math.exp(-26 * delta))
     }
 
     // Sit it on the surface. Cast straight down from just above the object onto

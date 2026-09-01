@@ -2,27 +2,44 @@
 // Guards the placement maths that has no other safety net.
 import assert from 'node:assert/strict'
 
-// --- two-finger twist (mirrors yawFromTwist in ARScene.tsx) ---
-const yawFromTwist = (startYaw, startTwist, twist) => startYaw - (twist - startTwist)
+// --- two-finger twist (mirrors angleDelta in ARScene.tsx) ---
+const angleDelta = (a, b) => Math.atan2(Math.sin(b - a), Math.cos(b - a))
 const twistOf = (a, b) => Math.atan2(b.y - a.y, b.x - a.x)
 
-assert.equal(yawFromTwist(0, 0, 0), 0, 'no twist = no rotation')
-assert.equal(yawFromTwist(1.2, 0.5, 0.5), 1.2, 'rotation accumulates from where the twist began')
+assert.equal(angleDelta(0, 0), 0, 'no twist = no rotation')
 // a quarter turn of the fingers is a quarter turn of the object, 1:1
-const flat = twistOf({ x: 0, y: 0 }, { x: 100, y: 0 })
-const quarter = twistOf({ x: 0, y: 0 }, { x: 0, y: 100 })
-assert.ok(
-  Math.abs(Math.abs(yawFromTwist(0, flat, quarter)) - Math.PI / 2) < 1e-9,
-  'a 90 degree finger twist rotates the object 90 degrees',
-)
-// opposite twists must rotate opposite ways
-const back = twistOf({ x: 0, y: 0 }, { x: 0, y: -100 })
-assert.ok(
-  Math.sign(yawFromTwist(0, flat, quarter)) !== Math.sign(yawFromTwist(0, flat, back)),
-  'twisting the other way rotates the other way',
-)
-// which finger the browser reports first must not flip the direction
-assert.equal(twistOf({ x: 0, y: 0 }, { x: 100, y: 0 }), 0, 'reference twist is zero')
+assert.ok(Math.abs(angleDelta(0, Math.PI / 2) - Math.PI / 2) < 1e-9, 'quarter turn maps 1:1')
+// opposite twists rotate opposite ways
+assert.ok(Math.sign(angleDelta(0, 0.4)) !== Math.sign(angleDelta(0, -0.4)), 'direction follows the twist')
+
+// The whole point: rotation must not stop at half a turn. atan2 wraps at +/-PI,
+// so accumulating raw differences caps at 180 degrees and jumps on the wrap.
+let yaw = 0
+let prev = 0
+// sweep the fingers through three full turns in small steps
+for (let i = 1; i <= 360; i++) {
+  const twist = twistOf({ x: 0, y: 0 }, { x: Math.cos(i * 0.05), y: Math.sin(i * 0.05) })
+  yaw += angleDelta(prev, twist)
+  prev = twist
+}
+assert.ok(Math.abs(yaw - 360 * 0.05) < 1e-6, `three full turns accumulate, got ${yaw} rad`)
+assert.ok(Math.abs(yaw) > Math.PI, 'rotation passes half a turn instead of stopping there')
+// and the same sweep backwards returns to zero, with no jump at the wrap
+for (let i = 360; i >= 0; i--) {
+  const twist = twistOf({ x: 0, y: 0 }, { x: Math.cos(i * 0.05), y: Math.sin(i * 0.05) })
+  yaw += angleDelta(prev, twist)
+  prev = twist
+}
+assert.ok(Math.abs(yaw) < 1e-6, 'twisting back unwinds exactly, no accumulated drift')
+// every step is small: a wrap must never produce a near-full-turn jump
+assert.ok(Math.abs(angleDelta(Math.PI - 0.01, -Math.PI + 0.01)) < 0.05, 'wrap is a small step, not a spin')
+
+// --- grab offset: dragging must not teleport the object under the finger ---
+const grabbed = (objPos, hitAtGrab) => objPos - hitAtGrab
+const dragged = (hitNow, offset) => hitNow + offset
+const offset = grabbed(2.0, 1.6) // finger landed 40cm from the object's centre
+assert.equal(dragged(1.6, offset), 2.0, 'object does not jump when the drag starts')
+assert.equal(dragged(2.1, offset), 2.5, 'object travels exactly as far as the finger')
 
 // --- drag smoothing: exponential damping, frame-rate independent ---
 const damp = (from, to, dt) => from + (to - from) * (1 - Math.exp(-18 * dt))

@@ -198,7 +198,7 @@ export function App() {
     if (pts.length >= 2) {
       const [a, b] = pts
       g.twist = Math.atan2(b.y - a.y, b.x - a.x)
-      g.mode = 'rotate' // Placement snapshots startTwist/startYaw on the change
+      g.mode = 'rotate' // Placement accumulates the twist delta each frame
     } else if (pts.length === 1) {
       g.x = pts[0].x
       g.y = pts[0].y
