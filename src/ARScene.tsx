@@ -287,6 +287,9 @@ export function Placement({
   const dragPlane = useRef(new Plane()).current
   const snapTargetY = useRef<number | null>(null)
   const scratch = useRef(new Vector3()).current
+  /** read in the select handler, which must not close over a stale prop */
+  const draftLive = useRef<Draft | null>(null)
+  draftLive.current = draft
 
   // Draft pose lives here, not in React state: dragging updates it every frame.
   const draftPos = useRef(new Vector3()).current
@@ -431,6 +434,10 @@ export function Placement({
       // Deselect immediately re-selects whatever is under the reticle.
       const g = gestureRef.current
       if (g && performance.now() < g.suppressSelectUntil) return
+      // Lifting the fingers after a twist or a drag emits a select. Acting on it
+      // reset the draft's rotation and position — the pose jumped back the
+      // moment you let go. While positioning, only Lock and Cancel apply.
+      if (draftLive.current) return
       if (!hasHit.current) return
 
       // Real raycast against placed objects — a fixed proximity radius made
@@ -446,6 +453,7 @@ export function Placement({
         }
       }
       if (picked == null) {
+        // starting a fresh draft, so a clean pose is correct here
         draftPos.copy(hitPos)
         dragTarget.copy(hitPos)
         draftYaw.current = 0

@@ -161,3 +161,40 @@ assert.ok(stepped < 0.80 && stepped > 0.75, 'moves toward the surface without sn
 assert.ok(Math.abs(easeY(0.80, 0.75, 2) - 0.75) < 1e-3, 'still settles exactly onto the surface')
 
 console.log('drag stability ok')
+
+// --- a select while positioning must not reset the pose ---
+// Lifting the fingers after a twist or drag emits an XR select. Acting on it
+// re-seeded the draft's position and yaw, so the object snapped back the
+// instant you let go — and rotation could never accumulate past one gesture.
+function onSelect({ draftActive, picked }, pose) {
+  if (draftActive) return pose // positioning: Lock and Cancel are the only exits
+  if (picked == null) return { pos: 'reticle', yaw: 0 } // fresh draft
+  return pose
+}
+
+const turned = { pos: 'where I put it', yaw: 2.6 } // well past a half turn
+assert.deepEqual(
+  onSelect({ draftActive: true, picked: null }, turned),
+  turned,
+  'letting go mid-position keeps the rotation',
+)
+assert.deepEqual(
+  onSelect({ draftActive: true, picked: 3 }, turned),
+  turned,
+  'and keeps it even if the ray happens to cross another object',
+)
+assert.deepEqual(
+  onSelect({ draftActive: false, picked: null }, turned),
+  { pos: 'reticle', yaw: 0 },
+  'a fresh draft still starts from a clean pose',
+)
+
+// rotation must survive repeated grab/release cycles to exceed one turn
+let held = 0
+for (let gesture = 0; gesture < 5; gesture++) {
+  held += 1.5 // each two-finger twist adds ~86 degrees
+  held = onSelect({ draftActive: true, picked: null }, { yaw: held }).yaw // release
+}
+assert.ok(held > Math.PI * 2, `five gestures accumulate past a full turn, got ${held} rad`)
+
+console.log('draft pose retention ok')
