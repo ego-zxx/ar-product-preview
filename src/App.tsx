@@ -3,7 +3,7 @@ import { Canvas } from '@react-three/fiber'
 import { Matrix4 } from 'three'
 import { XR, XRDomOverlay, createXRStore, useXR } from '@react-three/xr'
 import {
-  DepthOcclusion, Env, MAX_OBJECTS, PlaneOcclusion, Placement, RealLighting,
+  DepthOcclusion, Env, MAX_OBJECTS, PlaneOcclusion, Placement,
   newGesture, type Draft, type Gesture, type Placed,
 } from './ARScene'
 import { useAccess } from './access'
@@ -16,16 +16,15 @@ const store = createXRStore({
   // ponytail: 0.8 render scale — a mid-range phone can't drive PBR + env map at
   // native 2.8x DPR. Raise toward 1 if a target device has headroom.
   frameBufferScaling: 0.8,
-  // The library has no light-estimation option, so the whole init is spelled
-  // out here. Everything past local-floor is optional: a runtime that declines
-  // one (this phone declines depth-sensing) still gets a working session.
+  // Spelled out so features can be added or dropped explicitly. Everything past
+  // local-floor is optional: a runtime that declines one (mid-range phones
+  // decline depth-sensing) still gets a working session.
   customSessionInit: {
     requiredFeatures: ['local-floor'],
     optionalFeatures: [
       'hit-test',
       'anchors',
       'plane-detection',
-      'light-estimation',
       'depth-sensing',
       'dom-overlay',
     ],
@@ -370,7 +369,8 @@ export function App() {
           <Env />
           <PlaneOcclusion />
           <DepthOcclusion />
-          <RealLighting />
+          <ambientLight intensity={0.4} />
+          <directionalLight position={[1, 4, 2]} intensity={1.15} />
           <Placement
             objects={objects}
             draft={draft}
@@ -378,6 +378,7 @@ export function App() {
             commitRef={commitRef}
             onCommit={onCommit}
             gestureRef={gestureRef}
+            uiHidden={uiHidden}
             onTap={onTap}
             onSurface={setHasSurface}
             onError={setError}

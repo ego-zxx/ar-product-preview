@@ -1,9 +1,8 @@
 import { Suspense, useEffect, useRef } from 'react'
 import { useFrame, useLoader, useThree } from '@react-three/fiber'
 import {
-  AmbientLight, CanvasTexture, DirectionalLight, DoubleSide, Group, Matrix4,
-  Object3D, PMREMGenerator, Quaternion, Raycaster, SRGBColorSpace, Vector2,
-  Vector3, WebGLCubeRenderTarget,
+  CanvasTexture, DoubleSide, Group, Matrix4, Object3D, Plane, PMREMGenerator,
+  Quaternion, Raycaster, SRGBColorSpace, Vector2, Vector3,
 } from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
@@ -22,6 +21,16 @@ const UP = new Vector3(0, 1, 0)
  * what stops objects floating in mid-air.
  */
 const surfaces = new Set<Object3D>()
+let surfaceCache: Object3D[] = []
+let surfaceCacheSize = -1
+/** Raycasting wants an array; rebuild it only when the set actually changes. */
+const surfaceList = () => {
+  if (surfaceCacheSize !== surfaces.size) {
+    surfaceCache = [...surfaces]
+    surfaceCacheSize = surfaces.size
+  }
+  return surfaceCache
+}
 
 export type Placed = {
   id: number
@@ -120,13 +129,8 @@ export function PlaneOcclusion() {
 }
 
 /**
- * Drives the scene lights from ARCore's light estimate, so a virtual object is
- * lit like the room it is standing in. Falls back silently to the static rig
- * when the runtime declines the feature.
- */
-/**
- * Drives real-world occlusion. Reads the depth buffer each frame and keeps
- * every model's material patched with the depth test.
+ * Real-world occlusion. Off by default (see occlusion.ts) — kept switchable so
+ * it can be tuned on a device that grants usable depth.
  */
 export function DepthOcclusion() {
   const { gl, scene } = useThree()
@@ -137,8 +141,7 @@ export function DepthOcclusion() {
     const view = pose?.views[0]
     if (!view) return
     const ctx = gl.getContext()
-    const ok = updateOcclusion(frame, view, ctx.drawingBufferWidth, ctx.drawingBufferHeight)
-    if (!ok) return
+    if (!updateOcclusion(frame, view, ctx.drawingBufferWidth, ctx.drawingBufferHeight)) return
     // materials appear as products load, so keep sweeping
     scene.traverse((o) => {
       const m = (o as { material?: unknown }).material
@@ -147,86 +150,6 @@ export function DepthOcclusion() {
     })
   })
   return null
-}
-
-export function RealLighting() {
-  const { gl, scene } = useThree()
-  const probe = useRef<XRLightProbe | null>(null)
-  const dir = useRef<DirectionalLight>(null)
-  const amb = useRef<AmbientLight>(null)
-  const cubeTarget = useRef<WebGLCubeRenderTarget | null>(null)
-
-  useEffect(() => {
-    const session = gl.xr.getSession()
-    if (!session?.requestLightProbe) return
-    let cancelled = false
-    session
-      .requestLightProbe()
-      .then((p) => {
-        if (!cancelled) probe.current = p
-      })
-      .catch(() => {})
-    return () => {
-      cancelled = true
-      probe.current = null
-      cubeTarget.current?.dispose()
-      cubeTarget.current = null
-    }
-  }, [gl])
-
-  useFrame((_s, _d, frame) => {
-    const p = probe.current
-    if (!p || !frame?.getLightEstimate) return
-    const est = frame.getLightEstimate(p)
-    if (!est) return
-
-    // primary light: direction + intensity of the strongest real light source
-    const d = est.primaryLightDirection
-    const i = est.primaryLightIntensity
-    if (dir.current && d && i) {
-      dir.current.position.set(d.x, d.y, d.z).multiplyScalar(5)
-      dir.current.intensity = Math.min(3, Math.max(i.x, i.y, i.z))
-      dir.current.color.setRGB(
-        i.x / Math.max(i.x, i.y, i.z, 1e-4),
-        i.y / Math.max(i.x, i.y, i.z, 1e-4),
-        i.z / Math.max(i.x, i.y, i.z, 1e-4),
-      )
-    }
-    // ambient: DC term of the spherical harmonics is the average room light
-    const sh = est.sphericalHarmonicsCoefficients
-    if (amb.current && sh && sh.length >= 3) {
-      const k = 0.28209479 // Y00 basis constant
-      amb.current.color.setRGB(
-        Math.max(0, sh[0] * k),
-        Math.max(0, sh[1] * k),
-        Math.max(0, sh[2] * k),
-      )
-      amb.current.intensity = 1
-    }
-
-    // reflections: hand three the runtime's live cube map of the actual room
-    try {
-      const binding = new XRWebGLBinding(gl.xr.getSession()!, gl.getContext())
-      const cube = binding.getReflectionCubeMap?.(p)
-      if (cube) {
-        if (!cubeTarget.current) cubeTarget.current = new WebGLCubeRenderTarget(16)
-        const tex = cubeTarget.current.texture
-        const props = gl.properties.get(tex) as Record<string, unknown>
-        props.__webglTexture = cube
-        props.__webglInit = true
-        scene.environment = tex
-      }
-    } catch {
-      // keep the static environment map
-    }
-  })
-
-  return (
-    <>
-      <ambientLight ref={amb} intensity={0.35} />
-      <directionalLight ref={dir} position={[1, 4, 2]} intensity={1.1} castShadow={false} />
-    </>
-  )
 }
 
 function GltfModel({ url, scale }: { url: string; scale: number }) {
@@ -326,13 +249,16 @@ function FixedPlacement({
 }
 
 export function Placement({
-  objects, draft, selectedId, commitRef, gestureRef, onCommit, onTap, onSurface, onError,
+  objects, draft, selectedId, commitRef, gestureRef, uiHidden,
+  onCommit, onTap, onSurface, onError,
 }: {
   objects: Placed[]
   draft: Draft | null
   selectedId: number | null
   commitRef: React.RefObject<(() => void) | null>
   gestureRef: React.RefObject<Gesture>
+  /** clean view: no reticle either, the room should be uncluttered */
+  uiHidden: boolean
   onCommit: (p: { anchor?: XRAnchor; matrix?: Matrix4; yaw: number }) => void
   onTap: (nearestId: number | null) => void
   onSurface: (found: boolean) => void
@@ -351,6 +277,16 @@ export function Placement({
   const prevTwist = useRef(0)
   /** offset from the ray hit to the object when a drag began */
   const grab = useRef(new Vector3()).current
+  /**
+   * A fixed horizontal plane captured when the drag begins. Raycasting against
+   * ARCore's plane meshes every frame is jittery — it re-estimates their
+   * geometry constantly, so the hit point jumps. A mathematical plane is
+   * perfectly stable, and the surface snap below still keeps the object
+   * resting on whatever is actually beneath it.
+   */
+  const dragPlane = useRef(new Plane()).current
+  const snapTargetY = useRef<number | null>(null)
+  const scratch = useRef(new Vector3()).current
 
   // Draft pose lives here, not in React state: dragging updates it every frame.
   const draftPos = useRef(new Vector3()).current
@@ -380,12 +316,11 @@ export function Placement({
     'plane',
   )
 
-  const surfaceUnderFinger = (g: Gesture) => {
-    if (!surfaces.size) return null
+  /** Where the finger's ray meets the plane the object is being dragged on. */
+  const fingerOnPlane = (g: Gesture, out: Vector3) => {
     centre.set((g.x / window.innerWidth) * 2 - 1, -(g.y / window.innerHeight) * 2 + 1)
     raycaster.setFromCamera(centre, camera)
-    const hits = raycaster.intersectObjects([...surfaces], false)
-    return hits.length ? hits[0].point : null
+    return raycaster.ray.intersectPlane(dragPlane, out) ? out : null
   }
 
   useFrame((_s, delta, frame) => {
@@ -395,7 +330,7 @@ export function Placement({
     }
 
     const reticle = reticleRef.current
-    if (reticle) reticle.visible = hasHit.current && !draft
+    if (reticle) reticle.visible = hasHit.current && !draft && !uiHidden
     if (reticle?.visible) reticle.position.copy(hitPos)
 
     // --- gestures on the live draft ---
@@ -403,12 +338,13 @@ export function Placement({
     if (draft && g) {
       if (g.mode !== lastMode.current) {
         prevTwist.current = g.twist
-        // Grab the object where it is. Without this it jumps to sit under the
-        // finger the moment a drag starts, which reads as teleporting rather
-        // than dragging.
         if (g.mode === 'move') {
-          const hit = surfaceUnderFinger(g)
+          // Lock a stable plane at the object's current height for this drag.
+          dragPlane.setFromNormalAndCoplanarPoint(UP, draftPos)
+          // Grab the object where it is. Without this it jumps to sit under the
+          // finger the moment a drag starts, which reads as teleporting.
           grab.set(0, 0, 0)
+          const hit = fingerOnPlane(g, scratch)
           if (hit) grab.subVectors(draftPos, hit)
           dragTarget.copy(draftPos)
         }
@@ -420,15 +356,15 @@ export function Placement({
         // half a turn and never jumps when atan2 wraps.
         draftYaw.current -= angleDelta(prevTwist.current, g.twist)
         prevTwist.current = g.twist
-      } else if (g.mode === 'move' && surfaces.size) {
-        // Drag onto a REAL detected surface, never an imaginary plane, keeping
-        // the grab offset so the object travels with the finger.
-        const hit = surfaceUnderFinger(g)
+      } else if (g.mode === 'move') {
+        const hit = fingerOnPlane(g, scratch)
         if (hit) dragTarget.copy(hit).add(grab)
       }
-      // Ease toward the target: ARCore re-estimates its planes constantly so the
-      // raw hit point jitters. Damping is frame-rate independent.
-      if (g.mode === 'move') draftPos.lerp(dragTarget, 1 - Math.exp(-26 * delta))
+      if (g.mode === 'move') {
+        // light damping only — the plane is stable, so this smooths the finger,
+        // not the surface
+        draftPos.lerp(dragTarget, 1 - Math.exp(-32 * delta))
+      }
     }
 
     // Sit it on the surface. Cast straight down from just above the object onto
@@ -437,8 +373,14 @@ export function Placement({
     if (draft && surfaces.size) {
       above.copy(draftPos).y += 0.5
       downRay.set(above, DOWN)
-      const below = downRay.intersectObjects([...surfaces], false)
-      if (below.length) draftPos.y = below[0].point.y
+      const below = downRay.intersectObjects(surfaceList(), false)
+      if (below.length) snapTargetY.current = below[0].point.y
+      // Ease onto the surface rather than pinning Y every frame: a hard set
+      // undid the drag smoothing and passed every wobble in ARCore's plane
+      // estimate straight through to the object.
+      if (snapTargetY.current != null) {
+        draftPos.y += (snapTargetY.current - draftPos.y) * (1 - Math.exp(-14 * delta))
+      }
     }
 
     const d = draftRef.current

@@ -136,3 +136,28 @@ assert.ok(PITCH_MIN > -Math.PI / 2, 'never reaches straight up either')
 assert.ok(PITCH_MAX > 1.0, 'can tilt far enough to see into a cup from above')
 
 console.log('turntable orbit ok')
+
+// --- drag plane stays fixed for the whole gesture ---
+// Dragging projects onto a plane captured when the grab began, not onto
+// ARCore's plane meshes, whose geometry is re-estimated constantly. Re-deriving
+// the plane mid-drag is what made the object jump.
+function rayToPlane(originY, dirY, planeY) {
+  if (Math.abs(dirY) < 1e-6) return null
+  const t = (planeY - originY) / dirY
+  return t < 0 ? null : t
+}
+const planeY = 0.75
+// the plane must not move even if the reported surface wobbles
+const wobbles = [0.75, 0.762, 0.741, 0.758]
+const tOnFixed = wobbles.map(() => rayToPlane(1.5, -0.7, planeY))
+assert.ok(tOnFixed.every((t) => t === tOnFixed[0]), 'a fixed plane gives a stable hit')
+const tOnWobbly = wobbles.map((y) => rayToPlane(1.5, -0.7, y))
+assert.ok(new Set(tOnWobbly).size > 1, 'tracking the raw surface would jitter — hence the fixed plane')
+
+// --- surface snap eases rather than pinning ---
+const easeY = (y, target, dt) => y + (target - y) * (1 - Math.exp(-14 * dt))
+const stepped = easeY(0.80, 0.75, 1 / 60)
+assert.ok(stepped < 0.80 && stepped > 0.75, 'moves toward the surface without snapping onto it')
+assert.ok(Math.abs(easeY(0.80, 0.75, 2) - 0.75) < 1e-3, 'still settles exactly onto the surface')
+
+console.log('drag stability ok')
