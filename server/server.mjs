@@ -53,6 +53,7 @@ const routes = {
       id: randomBytes(8).toString('hex'),
       token: randomBytes(16).toString('hex'),
       hours,
+      label: String(body.label ?? '').trim().slice(0, 60),
       createdAt: Date.now(),
       revoked: false,
     }

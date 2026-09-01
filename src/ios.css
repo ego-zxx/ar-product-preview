@@ -113,8 +113,8 @@ body {
 }
 .row:last-child { border-bottom: none; }
 .row-main { flex: 1; min-width: 0; }
-.row-title { font-size: 15px; font-weight: 500; letter-spacing: 0.01em; }
-.row-sub { font-size: 12.5px; color: var(--label-2); margin-top: 3px; letter-spacing: 0.015em; }
+.row-title { font-size: 15px; font-weight: 500; letter-spacing: 0.01em; overflow-wrap: anywhere; }
+.row-sub { font-size: 12.5px; color: var(--label-2); margin-top: 3px; letter-spacing: 0.015em; overflow-wrap: anywhere; }
 .row-val { color: var(--label-2); font-size: 15px; }
 
 /* --- controls --- */
@@ -399,3 +399,19 @@ a { color: var(--gold); }
   color: var(--label-3); overflow-wrap: anywhere;
   margin: 0 0 16px; padding: 0 6px;
 }
+
+/* clean view: everything hidden but one quiet handle to bring the UI back */
+.ar-restore {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: calc(env(safe-area-inset-bottom) + 14px);
+  width: 74px; height: 30px; padding: 0; border-radius: 999px; z-index: 3;
+  appearance: none; cursor: pointer;
+  background: rgba(20, 18, 16, 0.32);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  display: flex; align-items: center; justify-content: center;
+  transition: opacity .4s;
+  opacity: 0.5;
+}
+.ar-restore:active { opacity: 1; }
+.ar-restore svg { width: 26px; height: 13px; fill: rgba(255, 255, 255, 0.85); }

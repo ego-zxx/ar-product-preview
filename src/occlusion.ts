@@ -27,6 +27,16 @@ export const occlusionUniforms = {
   uBias: { value: 0.12 },
   /** one depth texel, for neighbour taps */
   uTexel: { value: [1 / 160, 1 / 90] as [number, number] },
+  /**
+   * gl_FragCoord's origin is bottom-left, but the depth texture is uploaded
+   * with flipY=false so its v=0 is the image's top row. Without this flip the
+   * shader samples the wrong half of the buffer: objects low in frame read the
+   * far background (nothing occludes them) and objects high in frame read the
+   * near desk (they eat themselves).
+   */
+  uFlipY: { value: 1 },
+  /** 1 = paint the sampled depth instead of shading, to check alignment */
+  uDebug: { value: 0 },
   uEnabled: { value: 0 },
 }
 
@@ -141,6 +151,7 @@ export function patchForOcclusion(material: Material) {
         `#include <dithering_fragment>
         if (uEnabled > 0.5) {
           vec2 viewUv = gl_FragCoord.xy / uResolution;
+          if (uFlipY > 0.5) viewUv.y = 1.0 - viewUv.y;
           vec2 depthUv = (uDepthUv * vec4(viewUv, 0.0, 1.0)).xy;
 
           // Sample the texel and its neighbours, and keep the FARTHEST reading.
@@ -160,6 +171,12 @@ export function patchForOcclusion(material: Material) {
           }
           // need most taps to carry real data, else the reading is untrustworthy
           if (samples >= 4.0 && farthest < vViewDepth - uBias) discard;
+
+          if (uDebug > 0.5) {
+            // near = red, far = blue, over ~3m; misalignment is obvious on sight
+            float d = clamp(realDepthAt(depthUv) / 3.0, 0.0, 1.0);
+            gl_FragColor = vec4(1.0 - d, 0.0, d, 1.0);
+          }
         }`,
       )
   }

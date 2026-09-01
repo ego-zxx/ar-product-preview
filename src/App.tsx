@@ -59,6 +59,9 @@ export function App() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [confirmClear, setConfirmClear] = useState(false)
   const [hasSurface, setHasSurface] = useState(false)
+  const [uiHidden, setUiHidden] = useState(false)
+  const uiHiddenRef = useRef(false)
+  uiHiddenRef.current = uiHidden
   const commitRef = useRef<(() => void) | null>(null)
   const gestureRef = useRef<Gesture>(newGesture())
   const pointers = useRef(new Map<number, { x: number; y: number }>()).current
@@ -101,6 +104,7 @@ export function App() {
   // tap: select the locked object under the reticle, else start a draft
   const onTap = useCallback(
     (nearestId: number | null) => {
+      if (uiHiddenRef.current) return // clean view: look, don't edit
       if (nearestId != null) {
         setSelectedId(nearestId)
         setDraft(null)
@@ -159,6 +163,7 @@ export function App() {
           setSelectedId(null)
           setConfirmClear(false)
           setHasSurface(false)
+          setUiHidden(false)
         }
       }),
     [],
@@ -340,6 +345,19 @@ export function App() {
           />
           <InSession>
           <XRDomOverlay>
+            {uiHidden ? (
+              <button
+                className="ar-restore"
+                aria-label="Show controls"
+                onPointerDown={muteSelect}
+                onClick={() => setUiHidden(false)}
+              >
+                <svg viewBox="0 0 256 128" aria-hidden="true">
+                  <path d="M128 40 36 96a8 8 0 0 1-9-13l96-58a8 8 0 0 1 9 0l96 58a8 8 0 1 1-9 13Z" />
+                </svg>
+              </button>
+            ) : (
+            <>
             {/* full-screen rotate surface, only while positioning a draft.
                 Being a DOM element it also stops taps reaching the XR select. */}
             {draft && <div className="ar-rotate" {...gestureHandlers} />}
@@ -348,6 +366,16 @@ export function App() {
               <button className="pill" onPointerDown={muteSelect} onClick={() => store.getState().session?.end()}>
                 Done
               </button>
+              {objects.length > 0 && !draft && selectedId == null && (
+                <button
+                  className="pill"
+                  style={{ marginLeft: 'auto' }}
+                  onPointerDown={muteSelect}
+                  onClick={() => setUiHidden(true)}
+                >
+                  Clean view
+                </button>
+              )}
               <span className="pill" data-quiet="true">
                 {draft
                   ? 'Drag to move · two fingers to rotate'
@@ -452,6 +480,8 @@ export function App() {
                 </div>
               </div>
             </div>
+            </>
+            )}
           </XRDomOverlay>
           </InSession>
         </XR>

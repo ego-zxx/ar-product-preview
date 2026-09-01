@@ -20,6 +20,7 @@ type TokenRow = {
   id: string
   token: string
   hours: number
+  label?: string
   createdAt: number
   revoked: boolean
   status: 'unclaimed' | 'active' | 'expired' | 'revoked'
@@ -50,6 +51,7 @@ export function Admin() {
   const [products, setProducts] = useState<Product[]>([])
   const [activeUsers, setActiveUsers] = useState(0)
   const [hours, setHours] = useState(24)
+  const [label, setLabel] = useState('')
   const [qr, setQr] = useState<string | null>(null)
   const [busy, setBusy] = useState('')
   const [form, setForm] = useState({ name: '', category: 'Faucets', emoji: '🚰', scale: '1' })
@@ -131,9 +133,13 @@ export function Admin() {
   }
 
   const createToken = async () => {
-    const res = await api('/api/admin/tokens', { method: 'POST', body: JSON.stringify({ hours }) })
+    const res = await api('/api/admin/tokens', {
+      method: 'POST',
+      body: JSON.stringify({ hours, label }),
+    })
     if (res.ok) {
       await showQr((await res.json()).token)
+      setLabel('')
       refresh()
     }
   }
@@ -232,6 +238,19 @@ export function Admin() {
       {tab === 'access' ? (
         <>
           <div className="group">
+            <div className="row" style={{ display: 'block' }}>
+              <div className="row-title" style={{ marginBottom: 3 }}>Name</div>
+              <div className="row-sub" style={{ marginBottom: 9 }}>
+                So you can tell passes apart — a customer, a room, a showroom visit.
+              </div>
+              <input
+                className="field"
+                placeholder="e.g. Mr Sharma — Tuesday visit"
+                value={label}
+                maxLength={60}
+                onChange={(e) => setLabel(e.target.value)}
+              />
+            </div>
             <div className="row">
               <div className="row-main">
                 <div className="row-title">Duration</div>
@@ -296,7 +315,10 @@ export function Admin() {
             {tokens.map((t) => (
               <div className="row" key={t.id}>
                 <div className="row-main">
-                  <div className="row-title" style={{ color: statusColor[t.status] }}>
+                  <div className="row-title">
+                    {t.label || <span style={{ color: 'var(--label-3)' }}>Unnamed pass</span>}
+                  </div>
+                  <div className="row-sub" style={{ color: statusColor[t.status] }}>
                     {t.status}
                   </div>
                   <div className="row-sub">
