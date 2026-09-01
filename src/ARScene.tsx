@@ -1,0 +1,443 @@
+import { Suspense, useEffect, useRef } from 'react'
+import { useFrame, useLoader, useThree } from '@react-three/fiber'
+import {
+  AmbientLight, DirectionalLight, DoubleSide, Group, Matrix4, Object3D,
+  PMREMGenerator, Quaternion, Raycaster, Vector2, Vector3, WebGLCubeRenderTarget,
+} from 'three'
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
+import {
+  XRSpace, useXRHitTest, useXRInputSourceEvent, useXRPlaneGeometry, useXRPlanes,
+} from '@react-three/xr'
+import { CoffeeCup, Faucet } from './models'
+import type { Product } from './products'
+
+const UP = new Vector3(0, 1, 0)
+
+/**
+ * Meshes built from ARCore's detected planes. They serve twice: as depth-only
+ * occluders, and as the only surfaces an object may be dragged onto — which is
+ * what stops objects floating in mid-air.
+ */
+const surfaces = new Set<Object3D>()
+
+export type Placed = {
+  id: number
+  product: Product
+  yaw: number
+  anchor?: XRAnchor
+  matrix?: Matrix4
+}
+export type Draft = { product: Product }
+
+/** Reference ARCore app caps at 20 to avoid overloading tracking + renderer. */
+export const MAX_OBJECTS = 20
+
+/**
+ * Live gesture state, written by the DOM overlay and read in the frame loop so
+ * dragging never triggers a React render.
+ */
+export type Gesture = {
+  mode: 'none' | 'move' | 'rotate'
+  x: number
+  y: number
+  startX: number
+  startYaw: number
+  /** overlay buttons also emit an XR select; ignore selects until this time */
+  suppressSelectUntil: number
+}
+export const newGesture = (): Gesture => ({
+  mode: 'none', x: 0, y: 0, startX: 0, startYaw: 0, suppressSelectUntil: 0,
+})
+
+export function Env() {
+  const { gl, scene } = useThree()
+  useEffect(() => {
+    const pmrem = new PMREMGenerator(gl)
+    const env = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
+    scene.environment = env
+    return () => {
+      scene.environment = null
+      env.dispose()
+      pmrem.dispose()
+    }
+  }, [gl, scene])
+  return null
+}
+
+/**
+ * Detected surfaces rendered depth-only: they write to the depth buffer but not
+ * to colour, so anything behind them is hidden by the real world.
+ *
+ * ponytail: plane occlusion only — real per-pixel occlusion needs the WebXR
+ * Depth API, which this device (Galaxy A33) does not support. Planes cover
+ * tables/walls/floors; they cannot occlude a laptop or your hand.
+ */
+function PlaneOccluder({ plane }: { plane: XRPlane }) {
+  const geometry = useXRPlaneGeometry(plane)
+  const register = (m: Object3D | null) => {
+    if (m) surfaces.add(m)
+    else surfaces.forEach((o) => !o.parent && surfaces.delete(o))
+  }
+  return (
+    <XRSpace space={plane.planeSpace}>
+      <mesh ref={register} geometry={geometry} renderOrder={-1}>
+        <meshBasicMaterial
+          colorWrite={false}
+          // nudge the occluder back so an object resting on the plane doesn't
+          // z-fight with it and lose its base
+          polygonOffset
+          polygonOffsetFactor={1}
+          polygonOffsetUnits={1}
+        />
+      </mesh>
+    </XRSpace>
+  )
+}
+
+export function PlaneOcclusion() {
+  const planes = useXRPlanes()
+  return (
+    <>
+      {planes.map((plane, i) => (
+        <PlaneOccluder key={i} plane={plane} />
+      ))}
+    </>
+  )
+}
+
+/**
+ * Drives the scene lights from ARCore's light estimate, so a virtual object is
+ * lit like the room it is standing in. Falls back silently to the static rig
+ * when the runtime declines the feature.
+ */
+export function RealLighting() {
+  const { gl, scene } = useThree()
+  const probe = useRef<XRLightProbe | null>(null)
+  const dir = useRef<DirectionalLight>(null)
+  const amb = useRef<AmbientLight>(null)
+  const cubeTarget = useRef<WebGLCubeRenderTarget | null>(null)
+
+  useEffect(() => {
+    const session = gl.xr.getSession()
+    if (!session?.requestLightProbe) return
+    let cancelled = false
+    session
+      .requestLightProbe()
+      .then((p) => {
+        if (!cancelled) probe.current = p
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+      probe.current = null
+      cubeTarget.current?.dispose()
+      cubeTarget.current = null
+    }
+  }, [gl])
+
+  useFrame((_s, _d, frame) => {
+    const p = probe.current
+    if (!p || !frame?.getLightEstimate) return
+    const est = frame.getLightEstimate(p)
+    if (!est) return
+
+    // primary light: direction + intensity of the strongest real light source
+    const d = est.primaryLightDirection
+    const i = est.primaryLightIntensity
+    if (dir.current && d && i) {
+      dir.current.position.set(d.x, d.y, d.z).multiplyScalar(5)
+      dir.current.intensity = Math.min(3, Math.max(i.x, i.y, i.z))
+      dir.current.color.setRGB(
+        i.x / Math.max(i.x, i.y, i.z, 1e-4),
+        i.y / Math.max(i.x, i.y, i.z, 1e-4),
+        i.z / Math.max(i.x, i.y, i.z, 1e-4),
+      )
+    }
+    // ambient: DC term of the spherical harmonics is the average room light
+    const sh = est.sphericalHarmonicsCoefficients
+    if (amb.current && sh && sh.length >= 3) {
+      const k = 0.28209479 // Y00 basis constant
+      amb.current.color.setRGB(
+        Math.max(0, sh[0] * k),
+        Math.max(0, sh[1] * k),
+        Math.max(0, sh[2] * k),
+      )
+      amb.current.intensity = 1
+    }
+
+    // reflections: hand three the runtime's live cube map of the actual room
+    try {
+      const binding = new XRWebGLBinding(gl.xr.getSession()!, gl.getContext())
+      const cube = binding.getReflectionCubeMap?.(p)
+      if (cube) {
+        if (!cubeTarget.current) cubeTarget.current = new WebGLCubeRenderTarget(16)
+        const tex = cubeTarget.current.texture
+        const props = gl.properties.get(tex) as Record<string, unknown>
+        props.__webglTexture = cube
+        props.__webglInit = true
+        scene.environment = tex
+      }
+    } catch {
+      // keep the static environment map
+    }
+  })
+
+  return (
+    <>
+      <ambientLight ref={amb} intensity={0.35} />
+      <directionalLight ref={dir} position={[1, 4, 2]} intensity={1.1} castShadow={false} />
+    </>
+  )
+}
+
+function GltfModel({ url, scale }: { url: string; scale: number }) {
+  const gltf = useLoader(GLTFLoader, url)
+  const scene = useRef<Object3D>(gltf.scene.clone(true)).current
+  return <primitive object={scene} scale={scale} />
+}
+
+export function Model({ product }: { product: Product }) {
+  if (product.url === 'builtin:faucet') return <Faucet />
+  if (product.url === 'builtin:cup') return <CoffeeCup />
+  return (
+    <Suspense fallback={null}>
+      <GltfModel url={product.url} scale={product.scale} />
+    </Suspense>
+  )
+}
+
+function SelectionRing() {
+  return (
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.002, 0]}>
+      <ringGeometry args={[0.1, 0.115, 48]} />
+      <meshBasicMaterial color="#c9a227" side={DoubleSide} transparent opacity={0.95} />
+    </mesh>
+  )
+}
+
+function FixedPlacement({
+  matrix, yaw, product, selected, innerRef,
+}: {
+  matrix: Matrix4; yaw: number; product: Product; selected: boolean
+  innerRef: (o: Object3D | null) => void
+}) {
+  const pos = useRef(new Vector3()).current
+  const quat = useRef(new Quaternion()).current
+  const scl = useRef(new Vector3()).current
+  useEffect(() => {
+    matrix.decompose(pos, quat, scl)
+  }, [matrix, pos, quat, scl])
+  return (
+    <group ref={innerRef} position={pos} quaternion={quat}>
+      <group rotation-y={yaw}>
+        <Model product={product} />
+        {selected && <SelectionRing />}
+      </group>
+    </group>
+  )
+}
+
+export function Placement({
+  objects, draft, selectedId, commitRef, gestureRef, onCommit, onTap, onSurface, onError,
+}: {
+  objects: Placed[]
+  draft: Draft | null
+  selectedId: number | null
+  commitRef: React.RefObject<(() => void) | null>
+  gestureRef: React.RefObject<Gesture>
+  onCommit: (p: { anchor?: XRAnchor; matrix?: Matrix4; yaw: number }) => void
+  onTap: (nearestId: number | null) => void
+  onSurface: (found: boolean) => void
+  onError: (msg: string) => void
+}) {
+  const { gl, camera } = useThree()
+  const reticleRef = useRef<Group>(null)
+  const draftRef = useRef<Group>(null)
+  const matrix = useRef(new Matrix4()).current
+  const hitPos = useRef(new Vector3()).current
+  const hasHit = useRef(false)
+  const placedRefs = useRef(new Map<number, Object3D>()).current
+  const pendingLock = useRef(false)
+  const lastSurface = useRef<boolean | null>(null)
+  const lastMode = useRef<Gesture['mode']>('none')
+
+  // Draft pose lives here, not in React state: dragging updates it every frame.
+  const draftPos = useRef(new Vector3()).current
+  const draftYaw = useRef(0)
+
+  const raycaster = useRef(new Raycaster()).current
+  const centre = useRef(new Vector2(0, 0)).current
+
+  // Planes only. A feature-point hit can sit anywhere in mid-air, which is what
+  // made models float; planes give a pose that lies on a real surface.
+  useXRHitTest(
+    (results, getWorldMatrix) => {
+      try {
+        const hit = results[0]
+        hasHit.current = !!hit && getWorldMatrix(matrix, hit)
+        if (hasHit.current) hitPos.setFromMatrixPosition(matrix)
+      } catch (e) {
+        hasHit.current = false
+        onError(`hit-test: ${(e as Error).message}`)
+      }
+    },
+    'viewer',
+    'plane',
+  )
+
+  useFrame((_s, _d, frame) => {
+    if (hasHit.current !== lastSurface.current) {
+      lastSurface.current = hasHit.current
+      onSurface(hasHit.current)
+    }
+
+    const reticle = reticleRef.current
+    if (reticle) reticle.visible = hasHit.current && !draft
+    if (reticle?.visible) reticle.position.copy(hitPos)
+
+    // --- gestures on the live draft ---
+    const g = gestureRef.current
+    if (draft && g) {
+      // On entering rotate, snapshot the current yaw here — App can't see it.
+      if (g.mode !== lastMode.current) {
+        if (g.mode === 'rotate') {
+          g.startX = g.x
+          g.startYaw = draftYaw.current
+        }
+        lastMode.current = g.mode
+      }
+      if (g.mode === 'rotate') {
+        draftYaw.current = g.startYaw - (g.x - g.startX) * 0.012
+      } else if (g.mode === 'move' && surfaces.size) {
+        // Drag onto a REAL detected surface, never an imaginary plane. If the
+        // finger isn't over one, the object simply doesn't move — an object
+        // must always be resting on something.
+        centre.set((g.x / window.innerWidth) * 2 - 1, -(g.y / window.innerHeight) * 2 + 1)
+        raycaster.setFromCamera(centre, camera)
+        const hits = raycaster.intersectObjects([...surfaces], false)
+        if (hits.length) draftPos.copy(hits[0].point)
+      }
+    }
+
+    const d = draftRef.current
+    if (d) d.visible = !!draft
+    if (d && draft) {
+      d.position.copy(draftPos)
+      d.quaternion.setFromAxisAngle(UP, draftYaw.current)
+    }
+
+    if (pendingLock.current && draft) {
+      pendingLock.current = false
+      const yaw = draftYaw.current
+      const q = new Quaternion().setFromAxisAngle(UP, yaw)
+      const pos = draftPos.clone()
+      const fallback = new Matrix4().compose(pos, q, new Vector3(1, 1, 1))
+      const refSpace = gl.xr.getReferenceSpace()
+      if (frame?.createAnchor && refSpace) {
+        frame
+          .createAnchor(
+            new XRRigidTransform(
+              { x: pos.x, y: pos.y, z: pos.z },
+              { x: q.x, y: q.y, z: q.z, w: q.w },
+            ),
+            refSpace,
+          )!
+          .then((anchor) => onCommit(anchor ? { anchor, yaw } : { matrix: fallback, yaw }))
+          .catch(() => onCommit({ matrix: fallback, yaw }))
+      } else {
+        onCommit({ matrix: fallback, yaw })
+      }
+    }
+  })
+
+  useEffect(() => {
+    commitRef.current = () => {
+      pendingLock.current = true
+    }
+    return () => {
+      commitRef.current = null
+    }
+  }, [commitRef])
+
+  useXRInputSourceEvent(
+    'all',
+    'select',
+    () => {
+      // A tap on an overlay button also arrives here; without this, pressing
+      // Deselect immediately re-selects whatever is under the reticle.
+      const g = gestureRef.current
+      if (g && performance.now() < g.suppressSelectUntil) return
+      if (!hasHit.current) return
+
+      // Real raycast against placed objects — a fixed proximity radius made
+      // every tap near the first object select it instead of placing a new one.
+      raycaster.setFromCamera(centre.set(0, 0), camera)
+      let picked: number | null = null
+      let nearest = Infinity
+      for (const [id, obj] of placedRefs) {
+        const hits = raycaster.intersectObject(obj, true)
+        if (hits.length && hits[0].distance < nearest) {
+          nearest = hits[0].distance
+          picked = id
+        }
+      }
+      if (picked == null) {
+        draftPos.copy(hitPos)
+        draftYaw.current = 0
+      }
+      onTap(picked)
+    },
+    [onTap],
+  )
+
+  return (
+    <>
+      <group ref={reticleRef} visible={false}>
+        <mesh rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[0.06, 0.07, 48]} />
+          <meshBasicMaterial color="#c9a227" side={DoubleSide} transparent opacity={0.9} />
+        </mesh>
+      </group>
+
+      <group ref={draftRef} visible={false}>
+        {draft && (
+          <>
+            <Model product={draft.product} />
+            <SelectionRing />
+          </>
+        )}
+      </group>
+
+      {objects.map((o) => {
+        let space: XRSpace | undefined
+        try {
+          space = o.anchor?.anchorSpace
+        } catch {
+          space = undefined
+        }
+        const setRef = (g: Object3D | null) => {
+          if (g) placedRefs.set(o.id, g)
+          else placedRefs.delete(o.id)
+        }
+        return space ? (
+          <XRSpace key={o.id} space={space}>
+            <group ref={setRef} rotation-y={o.yaw}>
+              <Model product={o.product} />
+              {selectedId === o.id && <SelectionRing />}
+            </group>
+          </XRSpace>
+        ) : o.matrix ? (
+          <FixedPlacement
+            key={o.id}
+            matrix={o.matrix}
+            yaw={o.yaw}
+            product={o.product}
+            selected={selectedId === o.id}
+            innerRef={setRef}
+          />
+        ) : null
+      })}
+    </>
+  )
+}

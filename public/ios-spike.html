@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>iOS Spike — MindAR marker tracking</title>
+  <style>
+    body { margin: 0; background: #0b0d10; color: #e8eaed;
+           font-family: -apple-system, system-ui, sans-serif; }
+    #intro { min-height: 100dvh; display: flex; flex-direction: column;
+             align-items: center; justify-content: center; gap: 20px;
+             padding: 24px; text-align: center; }
+    #intro p { color: #9aa0a6; max-width: 340px; margin: 0; }
+    button { padding: 14px 28px; border-radius: 12px; border: none;
+             background: #4da3ff; color: #0b0d10; font-size: 17px; font-weight: 600; }
+    a { color: #4da3ff; }
+    #ar { position: fixed; inset: 0; display: none; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+      "mindar-image-three": "https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="intro">
+    <h1 style="font-size:22px;margin:0">iOS Marker-Tracking Spike</h1>
+    <p>Free 6DOF tracking in iOS Safari via a printed marker (MindAR).
+       Print or open this marker on another screen, then point the camera at it:</p>
+    <a href="https://cdn.jsdelivr.net/gh/hiukim/mind-ar-js@1.2.5/examples/image-tracking/assets/card-example/card.png"
+       target="_blank">marker image (card.png) →</a>
+    <p>The faucet is scaled assuming the marker is printed ~8.6&nbsp;cm wide
+       (credit-card width). Judge: steadiness on the marker, and what happens
+       when the marker leaves frame — that's the trade-off vs paid SLAM.</p>
+    <button id="start">Start camera</button>
+    <a href="/">← back to Android WebXR demo</a>
+  </div>
+  <div id="ar"></div>
+
+  <script type="module">
+    import * as THREE from 'three'
+    import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
+    import { MindARThree } from 'mindar-image-three'
+
+    // 1 MindAR unit = marker width. ponytail: calibration knob — printed size
+    // is unknowable from the web; adjust if the marker is printed larger.
+    const MARKER_WIDTH_M = 0.086
+    const SCALE = 1 / MARKER_WIDTH_M
+
+    const chrome = { color: 0xe8eaec, metalness: 1, roughness: 0.07 }
+    function faucet() {
+      const g = new THREE.Group()
+      const add = (geom, mat, pos, rot) => {
+        const m = new THREE.Mesh(geom, new THREE.MeshStandardMaterial(mat))
+        m.position.set(...pos)
+        if (rot) m.rotation.set(...rot)
+        g.add(m)
+      }
+      add(new THREE.CylinderGeometry(0.035, 0.04, 0.01, 48), chrome, [0, 0.005, 0])
+      add(new THREE.CylinderGeometry(0.014, 0.016, 0.15, 32), chrome, [0, 0.085, 0])
+      add(new THREE.TorusGeometry(0.05, 0.011, 20, 32, Math.PI / 2), chrome,
+          [0, 0.16, 0.05], [0, -Math.PI / 2, 0])
+      add(new THREE.CylinderGeometry(0.011, 0.013, 0.05, 24), chrome, [0, 0.135, 0.1])
+      add(new THREE.BoxGeometry(0.06, 0.008, 0.014),
+          { color: 0x1a1c1e, metalness: 0.2, roughness: 0.7 },
+          [0.03, 0.165, 0], [0, 0, -0.5])
+      return g
+    }
+
+    document.getElementById('start').onclick = async () => {
+      document.getElementById('intro').style.display = 'none'
+      const container = document.getElementById('ar')
+      container.style.display = 'block'
+
+      const mindar = new MindARThree({
+        container,
+        imageTargetSrc:
+          'https://cdn.jsdelivr.net/gh/hiukim/mind-ar-js@1.2.5/examples/image-tracking/assets/card-example/card.mind',
+      })
+      const { renderer, scene, camera } = mindar
+
+      const pmrem = new THREE.PMREMGenerator(renderer)
+      scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
+      scene.add(new THREE.AmbientLight(0xffffff, 0.3))
+      const dir = new THREE.DirectionalLight(0xffffff, 1.2)
+      dir.position.set(1, 4, 2)
+      scene.add(dir)
+
+      const model = faucet()
+      // marker plane is XY with Z out of the card; stand the faucet "up" off the card
+      model.rotation.x = Math.PI / 2
+      model.scale.setScalar(SCALE)
+      mindar.addAnchor(0).group.add(model)
+
+      await mindar.start()
+      renderer.setAnimationLoop(() => renderer.render(scene, camera))
+    }
+  </script>
+</body>
+</html>

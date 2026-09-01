@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.reticle/
+.DS_Store
+*.log
+
+# runtime state — contains the admin key, live sessions and access grants
+server/db.json
+# uploaded product models
+server/uploads/
+# self-signed TLS key + cert for LAN testing
+certs/
