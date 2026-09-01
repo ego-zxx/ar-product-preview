@@ -58,3 +58,28 @@ assert.equal(snapToSurface(0.2, [0]), 0, 'falls to the floor')
 assert.equal(snapToSurface(0.9, []), 0.9, 'no surface: object is left untouched')
 
 console.log('surface snap ok')
+
+// --- real-world scale ---
+// Products are authored in metres and never rescaled to the screen, so their
+// on-screen size is purely perspective. If a model's dimensions drift out of
+// plausible range it will look wrong in a real room no matter how good the
+// tracking is, so pin them here.
+import { readFileSync } from 'node:fs'
+const models = readFileSync(new URL('./models.tsx', import.meta.url), 'utf8')
+const profile = models.slice(models.indexOf('CUP_POINTS'), models.indexOf('as [number, number][]'))
+const pts = [...profile.matchAll(/\[([\d.]+), ([\d.]+)\]/g)].map(([, x, y]) => [+x, +y])
+const cupHeight = Math.max(...pts.map(([, y]) => y))
+const cupWidth = Math.max(...pts.map(([x]) => x)) * 2
+
+assert.ok(cupHeight > 0.07 && cupHeight < 0.13, `mug height ${cupHeight}m is not mug-sized`)
+assert.ok(cupWidth > 0.06 && cupWidth < 0.12, `mug width ${cupWidth}m is not mug-sized`)
+// a mug is taller than it is wide, but not by much — catches a swapped axis
+assert.ok(cupHeight > cupWidth && cupHeight < cupWidth * 1.6, 'mug proportions are off')
+
+// Nothing may rescale a product by viewing distance; that would defeat
+// perspective. Only the admin-set `scale` (units correction) is allowed.
+const scene = readFileSync(new URL('./ARScene.tsx', import.meta.url), 'utf8')
+assert.ok(!/scale=\{[^}]*distance/i.test(scene), 'product scale must not depend on distance')
+assert.ok(!/lookAt\(/.test(scene), 'products must not billboard toward the camera')
+
+console.log('real-world scale ok')

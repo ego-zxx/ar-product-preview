@@ -85,6 +85,7 @@ function PlaneOccluder({ plane }: { plane: XRPlane }) {
     <XRSpace space={plane.planeSpace}>
       <mesh ref={register} geometry={geometry} renderOrder={-1}>
         <meshBasicMaterial
+          userData={{ noOcclusion: true }}
           colorWrite={false}
           // nudge the occluder back so an object resting on the plane doesn't
           // z-fight with it and lose its base
@@ -284,7 +285,10 @@ function SelectionRing() {
   return (
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.002, 0]}>
       <ringGeometry args={[0.1, 0.115, 48]} />
-      <meshBasicMaterial color="#c9a227" side={DoubleSide} transparent opacity={0.95} />
+      <meshBasicMaterial
+        color="#c9a227" side={DoubleSide} transparent opacity={0.95}
+        userData={{ noOcclusion: true }}
+      />
     </mesh>
   )
 }
@@ -482,7 +486,10 @@ export function Placement({
       <group ref={reticleRef} visible={false}>
         <mesh rotation={[-Math.PI / 2, 0, 0]}>
           <ringGeometry args={[0.06, 0.07, 48]} />
-          <meshBasicMaterial color="#c9a227" side={DoubleSide} transparent opacity={0.9} />
+          <meshBasicMaterial
+            color="#c9a227" side={DoubleSide} transparent opacity={0.9}
+            userData={{ noOcclusion: true }}
+          />
         </mesh>
       </group>
 

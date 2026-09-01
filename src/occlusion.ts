@@ -11,6 +11,17 @@ import { DataTexture, Matrix4, RGFormat, UnsignedByteType, type Material } from 
  * fragment is discarded — so a hand, a laptop or a table edge hides the object.
  */
 
+/**
+ * Depth occlusion is OFF by default.
+ *
+ * On the hardware to hand the depth buffer is 160x90 for a 1080x2400 screen and
+ * noisy, and it has twice made the result worse than no occlusion at all —
+ * chewing holes in the model, and once hiding it entirely. Plane occlusion
+ * (walls and tables) carries the realism instead, and this stays available for
+ * tuning:  __occlusionUniforms.uEnabled.value = 1
+ */
+export let depthOcclusionEnabled = false
+
 export const occlusionUniforms = {
   uDepth: { value: null as DataTexture | null },
   /** maps normalized view coords -> normalized depth-buffer coords */
@@ -28,13 +39,12 @@ export const occlusionUniforms = {
   /** one depth texel, for neighbour taps */
   uTexel: { value: [1 / 160, 1 / 90] as [number, number] },
   /**
-   * gl_FragCoord's origin is bottom-left, but the depth texture is uploaded
-   * with flipY=false so its v=0 is the image's top row. Without this flip the
-   * shader samples the wrong half of the buffer: objects low in frame read the
-   * far background (nothing occludes them) and objects high in frame read the
-   * near desk (they eat themselves).
+   * Extra vertical flip when sampling. Off by default: the runtime's
+   * normDepthBufferFromNormView already carries the orientation, and flipping
+   * on top of it double-flips — every fragment then reads a near depth and the
+   * whole model is discarded.
    */
-  uFlipY: { value: 1 },
+  uFlipY: { value: 0 },
   /** 1 = paint the sampled depth instead of shading, to check alignment */
   uDebug: { value: 0 },
   uEnabled: { value: 0 },
@@ -44,6 +54,12 @@ export const occlusionUniforms = {
 // DevTools protocol, so the uniforms are reachable by name.
 ;(globalThis as Record<string, unknown>).__occlusion = () => occlusionStatus()
 ;(globalThis as Record<string, unknown>).__occlusionUniforms = occlusionUniforms
+
+export const setDepthOcclusion = (on: boolean) => {
+  depthOcclusionEnabled = on
+  if (!on) occlusionUniforms.uEnabled.value = 0
+}
+;(globalThis as Record<string, unknown>).__setDepthOcclusion = setDepthOcclusion
 
 let texture: DataTexture | null = null
 let lastW = 0
@@ -97,6 +113,10 @@ export function updateOcclusion(
   }
   texture.needsUpdate = true
 
+  if (!depthOcclusionEnabled) {
+    occlusionUniforms.uEnabled.value = 0
+    return false
+  }
   occlusionUniforms.uTexel.value = [1 / width, 1 / height]
   occlusionUniforms.uDepthUv.value.fromArray(info.normDepthBufferFromNormView.matrix)
   occlusionUniforms.uRawToMeters.value = info.rawValueToMeters
@@ -112,6 +132,8 @@ let compiledCount = 0
 /** Inject the depth test into a material's shader. Safe to call repeatedly. */
 export function patchForOcclusion(material: Material) {
   if (patched.has(material)) return
+  // helpers must always draw; occluding the reticle makes the app look dead
+  if (material.userData?.noOcclusion) return
   patched.add(material)
 
   patchedCount++
