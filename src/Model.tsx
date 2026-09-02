@@ -1,6 +1,6 @@
 import { Suspense, useEffect, useRef } from 'react'
-import { useLoader } from '@react-three/fiber'
-import { Box3, DoubleSide, Group, Mesh, Object3D, Vector3 } from 'three'
+import { useLoader, useThree } from '@react-three/fiber'
+import { Box3, DoubleSide, Group, Mesh, Object3D, Texture, Vector3 } from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { CoffeeCup, Faucet } from './models'
 import type { Product } from './products'
@@ -32,11 +32,28 @@ function ShadowCatcher({ size = 0.6 }: { size?: number }) {
 
 function GltfModel({ url, scale }: { url: string; scale: number }) {
   const gltf = useLoader(GLTFLoader, url)
+  const maxAnisotropy = useThree((s) => s.gl.capabilities.getMaxAnisotropy())
   const holder = useRef<Object3D | null>(null)
   if (!holder.current) {
     const root = gltf.scene.clone(true)
     root.traverse((o) => {
-      if ((o as Mesh).isMesh) o.castShadow = true
+      const mesh = o as Mesh
+      if (!mesh.isMesh) return
+      mesh.castShadow = true
+      // Anisotropic filtering. Without it a texture seen at a glancing angle —
+      // which is every product on a table viewed from standing height — falls
+      // to a low mip level and goes soft, sharpening only as you lean in. This
+      // is why it looked blurry at a distance and fine up close. three defaults
+      // to 1 (off); native viewers enable it, hence the difference.
+      for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+        for (const key of ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'emissiveMap'] as const) {
+          const tex = (m as unknown as Record<string, Texture | null>)[key]
+          if (tex && tex.anisotropy !== maxAnisotropy) {
+            tex.anisotropy = maxAnisotropy
+            tex.needsUpdate = true
+          }
+        }
+      }
     })
     const box = new Box3().setFromObject(root)
     if (!box.isEmpty()) {

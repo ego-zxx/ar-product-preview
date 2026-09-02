@@ -13,9 +13,12 @@ import { ProductPage } from './ProductPage'
 const overlayRoot = document.getElementById('ar-overlay')!
 const store = createXRStore({
   domOverlay: overlayRoot,
-  // ponytail: 0.8 render scale — a mid-range phone can't drive PBR + env map at
-  // native 2.8x DPR. Raise toward 1 if a target device has headroom.
-  frameBufferScaling: 0.8,
+  // Full render resolution. This was 0.8 when the scene could hold twenty
+  // objects; with one product there is headroom, and rendering at 80% then
+  // upscaling softens everything uniformly. Drop it again if a weak device
+  // drops frames — sharpness is worth more than headroom for a product shot,
+  // but not worth a stutter.
+  frameBufferScaling: 1,
   // Spelled out so features can be added or dropped explicitly. Everything past
   // local-floor is optional: a runtime that declines one (mid-range phones
   // decline depth-sensing) still gets a working session.
