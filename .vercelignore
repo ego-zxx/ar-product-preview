@@ -1,0 +1,8 @@
+# Vercel builds from source; none of this should be uploaded by the CLI.
+node_modules
+dist
+.git
+certs
+server/uploads
+server/db.json
+*.log
