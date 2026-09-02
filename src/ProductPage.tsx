@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { Box3, PMREMGenerator, Vector3, type Group, type PerspectiveCamera } from 'three'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
-import { Model } from './ARScene'
+import { Model } from './Model'
 import { isAndroid, sceneViewerUrl, supportsQuickLook, usdzUrl } from './usdz'
 import type { Product } from './products'
 
@@ -106,99 +106,76 @@ const PITCH_MIN = -0.45
 const PITCH_MAX = 1.25
 
 /**
- * The AR entry point, which differs by platform because the platforms differ.
+ * AR entry point. Both platforms hand off to their system viewer: Scene Viewer
+ * on Android, AR Quick Look on iOS. They render with native ARCore/ARKit —
+ * real depth occlusion, live light estimation and proper contact shadows — so
+ * they look considerably better than anything drawn in-page.
  *
- * Android runs the in-page WebXR scene, where several products can be placed
- * and left in the room together. iPhone Safari has no WebXR at all, so it hands
- * off to Apple's AR Quick Look — a system viewer showing this one product.
- * That is a real limitation of iOS, not of this app, and the copy says so
- * rather than pretending the two are the same.
+ * Both take only a file URL and read glTF as 1 unit = 1 metre, which is why
+ * scale is baked into the stored model (see bake.ts) rather than applied at
+ * draw time.
  */
-function ViewInSpace({
-  product, arSupported, onViewInSpace,
-}: {
-  product: Product
-  arSupported: boolean | null
-  onViewInSpace: () => void
-}) {
-  const [quickLook, setQuickLook] = useState(false)
-  const [android, setAndroid] = useState(false)
+function ViewInSpace({ product }: { product: Product }) {
+  const [platform, setPlatform] = useState<'android' | 'ios' | 'other'>('other')
   const [state, setState] = useState<'idle' | 'preparing' | 'failed'>('idle')
   const anchor = useRef<HTMLAnchorElement>(null)
 
   useEffect(() => {
-    setQuickLook(supportsQuickLook())
-    setAndroid(isAndroid())
+    setPlatform(isAndroid() ? 'android' : supportsQuickLook() ? 'ios' : 'other')
   }, [])
 
-  // Builtin demo models are React components with no GLB to convert.
+  // Builtin demo models are React components with no file to hand over.
   const convertible = !product.url.startsWith('builtin:')
 
-  const openQuickLook = async () => {
-    setState('preparing')
-    try {
-      const href = await usdzUrl(product)
-      const a = anchor.current
-      if (!a) return
-      a.href = href
-      a.click()
-      setState('idle')
-    } catch {
-      setState('failed')
-    }
-  }
-
-  // Android: hand off to Scene Viewer, the system counterpart to Quick Look.
-  if (android && convertible) {
+  if (platform === 'android' && convertible) {
     const absolute = new URL(product.url, location.href).href
     return (
-      <>
-        <a
-          className="btn"
-          style={{ marginTop: 26, display: 'block', textAlign: 'center', textDecoration: 'none' }}
-          href={sceneViewerUrl(absolute, product.name)}
-        >
-          View in your space
-        </a>
-        <p className="sub" style={{ marginTop: 10, textAlign: 'center' }}>
-          Opens in Google Scene Viewer, one product at a time. To place several
-          together, use <a href="#">the room preview</a>.
-        </p>
-      </>
+      <a className="btn btn-link" href={sceneViewerUrl(absolute, product.name)}>
+        View in your space
+      </a>
     )
   }
 
-  if (quickLook && convertible) {
+  if (platform === 'ios' && convertible) {
+    const open = async () => {
+      setState('preparing')
+      try {
+        const href = await usdzUrl(product)
+        const a = anchor.current
+        if (!a) return
+        a.href = href
+        a.click()
+        setState('idle')
+      } catch {
+        setState('failed')
+      }
+    }
     return (
       <>
-        <button className="btn" style={{ marginTop: 26 }} disabled={state === 'preparing'} onClick={openQuickLook}>
+        <button className="btn" disabled={state === 'preparing'} onClick={open}>
           {state === 'preparing' ? 'Preparing…' : 'View in your space'}
         </button>
         {/* Safari only treats rel="ar" as a Quick Look link when it wraps an image */}
         <a ref={anchor} rel="ar" style={{ display: 'none' }} aria-hidden="true">
           <img alt="" />
         </a>
-        <p className="sub" style={{ marginTop: 10, textAlign: 'center' }}>
-          {state === 'failed'
-            ? 'Could not prepare this model for iOS. Try Chrome on Android.'
-            : 'Opens in AR Quick Look. iOS shows one product at a time — use Android to place several together.'}
-        </p>
+        {state === 'failed' && (
+          <p className="sub" style={{ marginTop: 10, textAlign: 'center', color: 'var(--red)' }}>
+            Could not prepare this model for AR.
+          </p>
+        )}
       </>
     )
   }
 
   return (
     <>
-      <button className="btn" style={{ marginTop: 26 }} disabled={!arSupported} onClick={onViewInSpace}>
+      <button className="btn" disabled>
         View in your space
       </button>
-      {!arSupported && (
-        <p className="sub" style={{ marginTop: 10, textAlign: 'center' }}>
-          {arSupported === null
-            ? 'Checking…'
-            : 'Open in Chrome on Android, or Safari on iPhone, to place this in your room.'}
-        </p>
-      )}
+      <p className="sub" style={{ marginTop: 10, textAlign: 'center' }}>
+        Open this page on an Android phone or an iPhone to place it in your room.
+      </p>
     </>
   )
 }
@@ -206,13 +183,9 @@ function ViewInSpace({
 export function ProductPage({
   product,
   onBack,
-  onViewInSpace,
-  arSupported,
 }: {
   product: Product
   onBack: () => void
-  onViewInSpace: () => void
-  arSupported: boolean | null
 }) {
   const ctrl = useRef<Orbit>({
     yaw: 0,
@@ -278,7 +251,9 @@ export function ProductPage({
         </p>
       )}
 
-      <ViewInSpace product={product} arSupported={arSupported} onViewInSpace={onViewInSpace} />
+      <div style={{ marginTop: 26 }}>
+        <ViewInSpace product={product} />
+      </div>
 
       {(product.dimensions || product.specs?.length) && (
         <>

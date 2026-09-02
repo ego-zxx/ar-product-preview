@@ -495,3 +495,9 @@ code {
   box-shadow: 0 6px 20px rgba(0,0,0,.3), inset 0 1px 0 var(--highlight);
 }
 .ar-actions .pill { flex: 1; text-align: center; }
+
+/* an <a> that has to look and size exactly like .btn */
+.btn-link {
+  display: block; text-align: center; text-decoration: none;
+  box-sizing: border-box;
+}

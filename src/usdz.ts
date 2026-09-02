@@ -13,7 +13,7 @@
 import { Box3, Group, Vector3 } from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { USDZExporter } from 'three/addons/exporters/USDZExporter.js'
-import { groundingOffset } from './ARScene'
+import { groundingOffset } from './Model'
 import type { Product } from './products'
 
 /** iPadOS reports itself as a Mac, so touch points are the reliable tell. */
