@@ -151,6 +151,25 @@ points the app at the API. Leave it unset locally — Vite proxies `/api` and
 also means QR codes scan with no warning (unlike the self-signed LAN setup).
 Set the admin panel's "Link the QR points to" field to your Vercel URL.
 
+## Interaction and realism
+
+Placement mechanics follow what Google's `<model-viewer>` does in AR, after
+reading its source rather than guessing:
+
+- **Motion** is a critically damped spring (`src/damper.ts`, `DECAY_MS`), not a
+  lerp. It carries velocity, so the object tracks a moving finger without lag
+  piling up and settles with no overshoot.
+- **Dragging** hit-tests ARCore on the touch's own ray (transient-input hit
+  testing, profile `generic-touchscreen`), so the object follows real surfaces
+  under the finger. Off any surface it holds height and settles on release.
+- **Shadows** are the object's real silhouette from an overhead key light
+  (`KeyLight` in `src/ARScene.tsx`), caught by a transparent `ShadowMaterial`
+  plane under each object. Map size is the quality/performance knob.
+- **Placement** turns the product's front toward the camera.
+- Deliberately not adopted: pinch-to-scale (products are real size) and
+  `XREstimatedLight` (removed by request; it is the right way to bring room
+  lighting back if wanted).
+
 ## Tests
 
 ```bash

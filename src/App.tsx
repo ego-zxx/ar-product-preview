@@ -3,7 +3,7 @@ import { Canvas } from '@react-three/fiber'
 import { Matrix4 } from 'three'
 import { XR, XRDomOverlay, createXRStore, useXR } from '@react-three/xr'
 import {
-  DepthOcclusion, Env, MAX_OBJECTS, PlaneOcclusion, Placement,
+  DepthOcclusion, Env, KeyLight, MAX_OBJECTS, PlaneOcclusion, Placement,
   newGesture, type Draft, type Gesture, type Placed,
 } from './ARScene'
 import { useAccess } from './access'
@@ -364,13 +364,16 @@ export function App() {
       {/* Sits behind the UI and must never take pointer events: all interaction
           is DOM (landing/overlay) or XR select. Without this the full-screen
           canvas swallows every tap on the page. */}
-      <Canvas style={{ position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none' }}>
+      <Canvas
+        shadows="percentage"
+        style={{ position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none' }}
+      >
         <XR store={store}>
           <Env />
           <PlaneOcclusion />
           <DepthOcclusion />
           <ambientLight intensity={0.4} />
-          <directionalLight position={[1, 4, 2]} intensity={1.15} />
+          <KeyLight />
           <Placement
             objects={objects}
             draft={draft}

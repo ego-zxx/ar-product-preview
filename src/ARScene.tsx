@@ -1,14 +1,15 @@
 import { Suspense, useEffect, useRef } from 'react'
 import { useFrame, useLoader, useThree } from '@react-three/fiber'
 import {
-  CanvasTexture, DoubleSide, Group, Matrix4, Object3D, Plane, PMREMGenerator,
-  Quaternion, Raycaster, SRGBColorSpace, Vector2, Vector3,
+  DirectionalLight, DoubleSide, Group, Matrix4, Mesh, Object3D, Plane,
+  PMREMGenerator, Quaternion, Raycaster, Vector2, Vector3,
 } from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import {
-  XRSpace, useXRHitTest, useXRInputSourceEvent, useXRPlaneGeometry, useXRPlanes,
+  XRSpace, useXR, useXRHitTest, useXRInputSourceEvent, useXRPlaneGeometry, useXRPlanes,
 } from '@react-three/xr'
+import { Damper } from './damper'
 import { CoffeeCup, Faucet } from './models'
 import type { Product } from './products'
 import { patchForOcclusion, updateOcclusion } from './occlusion'
@@ -76,6 +77,13 @@ export const newGesture = (): Gesture => ({
  * delta each frame instead allows unlimited rotation in either direction.
  */
 export const angleDelta = (a: number, b: number) => Math.atan2(Math.sin(b - a), Math.cos(b - a))
+
+/**
+ * Yaw that turns a model's +Z front toward the camera, given the camera's
+ * forward direction. model-viewer does this on placement so the product's
+ * front greets you rather than whichever side the hit pose happened to give.
+ */
+export const faceCameraYaw = (dirX: number, dirZ: number) => Math.atan2(-dirX, -dirZ)
 
 export function Env() {
   const { gl, scene } = useThree()
@@ -160,14 +168,27 @@ export function DepthOcclusion() {
 
 function GltfModel({ url, scale }: { url: string; scale: number }) {
   const gltf = useLoader(GLTFLoader, url)
-  const scene = useRef<Object3D>(gltf.scene.clone(true)).current
-  return <primitive object={scene} scale={scale} />
+  const scene = useRef<Object3D | null>(null)
+  if (!scene.current) {
+    scene.current = gltf.scene.clone(true)
+    scene.current.traverse((o) => {
+      if ((o as Mesh).isMesh) o.castShadow = true
+    })
+  }
+  return <primitive object={scene.current} scale={scale} />
 }
 
 export function Model({ product }: { product: Product }) {
+  const ref = useRef<Group>(null)
+  // builtin meshes exist synchronously, so one pass on mount suffices
+  useEffect(() => {
+    ref.current?.traverse((o) => {
+      if ((o as Mesh).isMesh) o.castShadow = true
+    })
+  }, [product.id])
   return (
-    <>
-      <ContactShadow />
+    <group ref={ref}>
+      <ShadowCatcher />
       {product.url === 'builtin:faucet' ? (
         <Faucet />
       ) : product.url === 'builtin:cup' ? (
@@ -177,46 +198,61 @@ export function Model({ product }: { product: Product }) {
           <GltfModel url={product.url} scale={product.scale} />
         </Suspense>
       )}
-    </>
+    </group>
   )
 }
 
 /**
- * Soft blob shadow drawn on the surface under an object. Without a contact
- * shadow the eye reads even a perfectly placed object as hovering — this does
- * more for "it's really there" than any amount of positional accuracy.
- *
- * ponytail: painted gradient, not a shadow map. A real shadow needs a light
- * direction and a depth pass per frame; this costs one texture and always
- * lands directly under the object. Swap it if directional shadows matter.
+ * Catches the object's real shadow. ShadowMaterial is invisible except where a
+ * shadow falls, so the plane itself never shows — only the object's actual
+ * silhouette from the light, soft-edged. A painted blob was the same shape
+ * for a faucet and a cup; this is not.
  */
-const shadowTexture = (() => {
-  const size = 128
-  const c = document.createElement('canvas')
-  c.width = c.height = size
-  const ctx = c.getContext('2d')!
-  const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2)
-  g.addColorStop(0, 'rgba(0,0,0,0.55)')
-  g.addColorStop(0.45, 'rgba(0,0,0,0.28)')
-  g.addColorStop(1, 'rgba(0,0,0,0)')
-  ctx.fillStyle = g
-  ctx.fillRect(0, 0, size, size)
-  const t = new CanvasTexture(c)
-  t.colorSpace = SRGBColorSpace
-  return t
-})()
-
-function ContactShadow({ radius = 0.075 }: { radius?: number }) {
+function ShadowCatcher({ size = 0.5 }: { size?: number }) {
   return (
-    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.0012, 0]} renderOrder={1}>
-      <planeGeometry args={[radius * 2.4, radius * 2.4]} />
-      <meshBasicMaterial
-        map={shadowTexture}
-        transparent
-        opacity={0.85}
-        depthWrite={false}
-      />
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.0012, 0]} receiveShadow renderOrder={1}>
+      <planeGeometry args={[size, size]} />
+      <shadowMaterial transparent opacity={0.42} depthWrite={false} userData={{ noOcclusion: true }} />
     </mesh>
+  )
+}
+
+/**
+ * Overhead key light that casts the shadows. It follows the user so the shadow
+ * frustum is always centred where objects get placed — a fixed ortho box would
+ * leave anything across the room unshadowed. Near-vertical, because a shadow
+ * from a direction the room's light doesn't come from looks wrong; straight
+ * down is the neutral choice and matches most ceiling lighting.
+ *
+ * ponytail: 1024 map over a 4m box is ~4mm per texel, softened by PCF radius.
+ * Raise mapSize to 2048 for crisper shadows on phones with headroom.
+ */
+export function KeyLight() {
+  const light = useRef<DirectionalLight>(null)
+  const { camera } = useThree()
+  useFrame(() => {
+    const l = light.current
+    if (!l) return
+    l.target.position.set(camera.position.x, 0, camera.position.z)
+    l.position.set(camera.position.x + 0.4, camera.position.y + 3.5, camera.position.z + 0.7)
+    l.target.updateMatrixWorld()
+  })
+  return (
+    <directionalLight
+      ref={light}
+      intensity={1.15}
+      castShadow
+      shadow-mapSize={[1024, 1024]}
+      shadow-radius={5}
+      shadow-bias={-0.0004}
+      shadow-normalBias={0.02}
+      shadow-camera-left={-2}
+      shadow-camera-right={2}
+      shadow-camera-top={2}
+      shadow-camera-bottom={-2}
+      shadow-camera-near={0.1}
+      shadow-camera-far={12}
+    />
   )
 }
 
@@ -300,8 +336,42 @@ export function Placement({
    * resting on whatever is actually beneath it.
    */
   const dragPlane = useRef(new Plane()).current
-  const snapTargetY = useRef<number | null>(null)
   const scratch = useRef(new Vector3()).current
+
+  // Critically damped springs (model-viewer's approach): velocity, no overshoot.
+  const dampX = useRef(new Damper()).current
+  const dampY = useRef(new Damper()).current
+  const dampZ = useRef(new Damper()).current
+  const dampYaw = useRef(new Damper()).current
+  /** where the draft is heading; the dampers carry it there */
+  const goal = useRef(new Vector3()).current
+  const goalYaw = useRef(0)
+
+  // ARCore hit-testing on the touch's own ray: a point on a REAL surface
+  // under the finger. This is how model-viewer drags, and it is both smoother
+  // than raycasting our own plane meshes (whose geometry ARCore keeps
+  // re-estimating) and grounded, unlike a mathematical plane.
+  const session = useXR((st) => st.session)
+  const transientSrc = useRef<XRTransientInputHitTestSource | null>(null)
+  useEffect(() => {
+    const s = session
+    if (!s || !s.requestHitTestSourceForTransientInput) return
+    let cancelled = false
+    // typed as possibly returning undefined; ?. short-circuits the whole chain
+    s.requestHitTestSourceForTransientInput({ profile: 'generic-touchscreen', entityTypes: ['plane'] })
+      ?.then((src) => {
+        if (cancelled) src.cancel()
+        else transientSrc.current = src
+      })
+      .catch(() => {
+        // fine: dragging falls back to the stable plane below
+      })
+    return () => {
+      cancelled = true
+      transientSrc.current?.cancel()
+      transientSrc.current = null
+    }
+  }, [session])
   /** read in the select handler, which must not close over a stale prop */
   const draftLive = useRef<Draft | null>(null)
   draftLive.current = draft
@@ -316,7 +386,6 @@ export function Placement({
   const raycaster = useRef(new Raycaster()).current
   const centre = useRef(new Vector2(0, 0)).current
   const downRay = useRef(new Raycaster()).current
-  const dragTarget = useRef(new Vector3()).current
   const above = useRef(new Vector3()).current
   const DOWN = useRef(new Vector3(0, -1, 0)).current
 
@@ -344,6 +413,26 @@ export function Placement({
     return raycaster.ray.intersectPlane(dragPlane, out) ? out : null
   }
 
+  /**
+   * Where the finger is, in the world. Prefers ARCore's hit on the touch ray (a
+   * point on a real surface); off any surface it falls back to the drag plane,
+   * so the object holds its height rather than vanishing or dropping.
+   */
+  const fingerHit = (g: Gesture, frame: XRFrame | undefined, out: Vector3) => {
+    const src = transientSrc.current
+    const ref = gl.xr.getReferenceSpace()
+    if (src && frame && ref) {
+      for (const r of frame.getHitTestResultsForTransientInput(src)) {
+        const pose = r.results[0]?.getPose(ref)
+        if (pose) {
+          const p = pose.transform.position
+          return out.set(p.x, p.y, p.z)
+        }
+      }
+    }
+    return fingerOnPlane(g, out)
+  }
+
   useFrame((_s, delta, frame) => {
     if (hasHit.current !== lastSurface.current) {
       lastSurface.current = hasHit.current
@@ -356,18 +445,20 @@ export function Placement({
 
     // --- gestures on the live draft ---
     const g = gestureRef.current
+    const dtMs = Math.min(delta, 0.1) * 1000 // clamp a stall so the spring can't leap
     if (draft && g) {
       if (g.mode !== lastMode.current) {
         prevTwist.current = g.twist
         if (g.mode === 'move') {
-          // Lock a stable plane at the object's current height for this drag.
+          // Fallback plane at the object's current height, for when the finger
+          // leaves every surface mid-drag.
           dragPlane.setFromNormalAndCoplanarPoint(UP, draftPos)
           // Grab the object where it is. Without this it jumps to sit under the
           // finger the moment a drag starts, which reads as teleporting.
           grab.set(0, 0, 0)
-          const hit = fingerOnPlane(g, scratch)
+          const hit = fingerHit(g, frame, scratch)
           if (hit) grab.subVectors(draftPos, hit)
-          dragTarget.copy(draftPos)
+          goal.copy(draftPos)
         }
         lastMode.current = g.mode
       }
@@ -375,33 +466,29 @@ export function Placement({
       if (g.mode === 'rotate') {
         // Accumulate the shortest delta each frame, so rotation never stops at
         // half a turn and never jumps when atan2 wraps.
-        draftYaw.current -= angleDelta(prevTwist.current, g.twist)
+        goalYaw.current -= angleDelta(prevTwist.current, g.twist)
         prevTwist.current = g.twist
       } else if (g.mode === 'move') {
-        const hit = fingerOnPlane(g, scratch)
-        if (hit) dragTarget.copy(hit).add(grab)
-      }
-      if (g.mode === 'move') {
-        // light damping only — the plane is stable, so this smooths the finger,
-        // not the surface
-        draftPos.lerp(dragTarget, 1 - Math.exp(-32 * delta))
+        const hit = fingerHit(g, frame, scratch)
+        if (hit) goal.copy(hit).add(grab)
       }
     }
 
-    // Sit it on the surface. Cast straight down from just above the object onto
-    // the detected planes and pin Y to whatever it lands on, so an object can
-    // never hover — regardless of what the hit-test or a drag produced.
-    if (draft && surfaces.size) {
+    // Settle onto whatever is beneath — but not mid-drag. Dragging across a
+    // table edge holds height and the object drops on release, as in
+    // model-viewer, instead of fighting the finger every frame.
+    if (draft && g?.mode !== 'move' && surfaces.size) {
       above.copy(draftPos).y += 0.5
       downRay.set(above, DOWN)
       const below = downRay.intersectObjects(surfaceList(), false)
-      if (below.length) snapTargetY.current = below[0].point.y
-      // Ease onto the surface rather than pinning Y every frame: a hard set
-      // undid the drag smoothing and passed every wobble in ARCore's plane
-      // estimate straight through to the object.
-      if (snapTargetY.current != null) {
-        draftPos.y += (snapTargetY.current - draftPos.y) * (1 - Math.exp(-14 * delta))
-      }
+      if (below.length) goal.y = below[0].point.y
+    }
+
+    if (draft) {
+      draftPos.x = dampX.update(draftPos.x, goal.x, dtMs, 1)
+      draftPos.y = dampY.update(draftPos.y, goal.y, dtMs, 1)
+      draftPos.z = dampZ.update(draftPos.z, goal.z, dtMs, 1)
+      draftYaw.current = dampYaw.update(draftYaw.current, goalYaw.current, dtMs, Math.PI)
     }
 
     const d = draftRef.current
@@ -497,10 +584,15 @@ export function Placement({
         }
       }
       if (picked == null) {
-        // starting a fresh draft, so a clean pose is correct here
+        // starting a fresh draft: land it, face it toward the user, no momentum
         draftPos.copy(hitPos)
-        dragTarget.copy(hitPos)
-        draftYaw.current = 0
+        goal.copy(hitPos)
+        camera.getWorldDirection(scratch)
+        draftYaw.current = goalYaw.current = faceCameraYaw(scratch.x, scratch.z)
+        dampX.reset()
+        dampY.reset()
+        dampZ.reset()
+        dampYaw.reset()
       }
       onTap(picked)
     },

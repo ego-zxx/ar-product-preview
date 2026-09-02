@@ -230,3 +230,72 @@ assert.ok(
 )
 
 console.log('selection tolerance ok')
+
+// --- critically damped spring (mirrors src/damper.ts, model-viewer's Damper) ---
+class Damper {
+  constructor(decayMs = 50) { this.v = 0; this.w = 1 / Math.max(0.001, decayMs) }
+  reset() { this.v = 0 }
+  update(x, goal, dt, norm = 1) {
+    const w = this.w, nil = 0.0002 * w
+    if (norm === 0) return goal
+    if (x === goal && this.v === 0) return goal
+    if (dt < 0) return x
+    const dX = x - goal
+    const iv = this.v + w * dX
+    const iX = dX + dt * iv
+    const decay = Math.exp(-w * dt)
+    const nv = (iv - w * iX) * decay
+    const acc = -w * (nv + iv * decay)
+    if (Math.abs(nv) < nil * Math.abs(norm) && acc * dX >= 0) { this.v = 0; return goal }
+    this.v = nv
+    return goal + iX * decay
+  }
+}
+const run = (steps, dt, from = 0, to = 1) => {
+  const d = new Damper(); let x = from; const trace = []
+  for (let i = 0; i < steps; i++) { x = d.update(x, to, dt); trace.push(x) }
+  return trace
+}
+
+// arrives, and lands exactly (the nil-speed snap), not asymptotically
+const t60 = run(120, 1000 / 60)
+assert.equal(t60[t60.length - 1], 1, 'settles exactly on the goal')
+// never overshoots — critically damped, the whole point over a plain spring
+assert.ok(t60.every((x) => x <= 1 + 1e-9), 'no overshoot')
+// monotonic approach: no wobble on the way in
+assert.ok(t60.every((x, i) => i === 0 || x >= t60[i - 1] - 1e-12), 'monotonic')
+// frame-rate independent: 30fps and 60fps agree on where it is after 200ms
+const at30 = run(6, 1000 / 30)[5]
+const at60 = run(12, 1000 / 60)[11]
+assert.ok(Math.abs(at30 - at60) < 0.02, `30fps vs 60fps after 200ms: ${at30} vs ${at60}`)
+// carries velocity: a moving goal is tracked without the lag piling up
+{
+  const d = new Damper(); let x = 0
+  for (let i = 1; i <= 60; i++) x = d.update(x, i * 0.01, 1000 / 60) // goal moves 1cm/frame
+  assert.ok(0.6 - x < 0.08, `tracks a moving goal closely, lag ${(0.6 - x).toFixed(3)}m`)
+}
+// a stalled frame is clamped upstream to 100ms; even that must not explode
+const stall = new Damper(); const afterStall = stall.update(0, 1, 100)
+assert.ok(afterStall > 0 && afterStall <= 1, 'a long frame still lands inside [0, goal]')
+// reset() forgets momentum so a new draft doesn't inherit the old drag's speed
+{
+  const d = new Damper(); d.update(0, 1, 16); d.update(0.2, 1, 16); d.reset()
+  assert.equal(d.update(5, 5, 16), 5, 'after reset, sitting on the goal stays put')
+}
+
+// --- face the camera on placement ---
+const faceCameraYaw = (dx, dz) => Math.atan2(-dx, -dz)
+const front = (yaw) => [Math.sin(yaw), Math.cos(yaw)] // where a +Z front points after yaw
+const near = (a, b) => Math.abs(a - b) < 1e-9
+// camera looking down -Z: the front should point back at it, i.e. +Z
+{ const [fx, fz] = front(faceCameraYaw(0, -1)); assert.ok(near(fx, 0) && near(fz, 1), 'faces a camera looking -Z') }
+// camera looking +X: front should point -X
+{ const [fx, fz] = front(faceCameraYaw(1, 0)); assert.ok(near(fx, -1) && near(fz, 0), 'faces a camera looking +X') }
+// in general the front is exactly opposite the camera's forward
+for (const a of [0.3, 1.1, 2.4, -2.0]) {
+  const dx = Math.sin(a), dz = -Math.cos(a)
+  const [fx, fz] = front(faceCameraYaw(dx, dz))
+  assert.ok(near(fx, -dx) && near(fz, -dz), `front opposes camera forward at ${a}`)
+}
+
+console.log('spring + face-camera ok')
