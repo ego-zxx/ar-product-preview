@@ -88,7 +88,7 @@ Look for **Setup Node.js App** in cPanel (Software section).
    boot — take it from there.
 4. Build the frontend against it and upload:
    ```bash
-   VITE_API_URL=https://yourdomain.com/api npm run package
+   VITE_API_URL=https://yourdomain.com npm run package
    ```
    Unzip `ar-preview-cpanel.zip` into `public_html`.
 
@@ -129,11 +129,13 @@ Deploy this repo; the start command is `node server/server.mjs`. It reads:
 |---|---|
 | `PORT` | assigned by the platform |
 | `ALLOWED_ORIGIN` | your Vercel URL, e.g. `https://your-app.vercel.app` |
+| `DATA_DIR` | where `db.json` and uploads live — point it at the volume, e.g. `/data` |
 
 The admin key is printed to the logs on first boot — grab it from there.
 
-Attach a **persistent volume** mounted at `server/` or the JSON store and
-uploaded models are wiped on every redeploy.
+Attach a **persistent volume** and set `DATA_DIR` to its mount path. Without
+it the JSON store and uploaded models are wiped on every redeploy. Do not
+mount the volume over `server/` — it would hide `server.mjs`.
 
 ### Frontend — Vercel
 
@@ -144,7 +146,8 @@ VITE_API_URL=https://your-api.up.railway.app
 ```
 
 Everything client-side routes through `src/api.ts`, so that single variable
-points the app at the API. Leave it unset locally — Vite proxies `/api` and
+points the app at the API. It is the API's **origin only** — the client adds
+`/api/...` and `/models/...` itself. Leave it unset locally — Vite proxies `/api` and
 `/models` to `localhost:8788`.
 
 **HTTPS is mandatory** for WebXR; Vercel gives you a real certificate, which

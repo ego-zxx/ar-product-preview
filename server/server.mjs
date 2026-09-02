@@ -4,17 +4,25 @@
 import { createServer } from 'node:http'
 import { randomBytes } from 'node:crypto'
 import { networkInterfaces } from 'node:os'
+import { pathToFileURL } from 'node:url'
 import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync } from 'node:fs'
-import { extname, basename } from 'node:path'
+import { extname, basename, resolve } from 'node:path'
 
-const DB = new URL('./db.json', import.meta.url)
+// Where state lives. Defaults to next to this file; set DATA_DIR to a mounted
+// volume in production (Railway/Render), because a volume mounted over the
+// source directory would hide server.mjs itself.
+const DATA = process.env.DATA_DIR
+  ? pathToFileURL(resolve(process.env.DATA_DIR) + '/')
+  : new URL('./', import.meta.url)
+mkdirSync(DATA, { recursive: true })
+const DB = new URL('db.json', DATA)
 const db = existsSync(DB)
   ? JSON.parse(readFileSync(DB, 'utf8'))
   : { adminKey: randomBytes(16).toString('hex'), tokens: [], grants: [], products: [] }
 db.products ??= []
 db.sessions ??= []
 
-const UPLOADS = new URL('./uploads/', import.meta.url)
+const UPLOADS = new URL('uploads/', DATA)
 mkdirSync(UPLOADS, { recursive: true })
 const MAX_UPLOAD = 60 * 1024 * 1024
 const save = () => writeFileSync(DB, JSON.stringify(db, null, 2))
