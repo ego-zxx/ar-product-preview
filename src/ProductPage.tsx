@@ -3,7 +3,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { Box3, PMREMGenerator, Vector3, type Group, type PerspectiveCamera } from 'three'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { Model } from './Model'
-import { isAndroid, sceneViewerUrl, supportsQuickLook, usdzUrl } from './usdz'
+import { supportsQuickLook, usdzUrl } from './usdz'
 import type { Product } from './products'
 
 /** Studio lighting for the non-AR preview — no camera feed to match here. */
@@ -106,37 +106,42 @@ const PITCH_MIN = -0.45
 const PITCH_MAX = 1.25
 
 /**
- * AR entry point. Both platforms hand off to their system viewer: Scene Viewer
- * on Android, AR Quick Look on iOS. They render with native ARCore/ARKit —
- * real depth occlusion, live light estimation and proper contact shadows — so
- * they look considerably better than anything drawn in-page.
+ * AR entry point, chosen per platform for the best-looking result.
  *
- * Both take only a file URL and read glTF as 1 unit = 1 metre, which is why
- * scale is baked into the stored model (see bake.ts) rather than applied at
- * draw time.
+ * Android uses the in-page WebXR scene: three.js renders
+ * KHR_materials_transmission, so glass and liquids read as glass. Scene Viewer
+ * ignores that extension and draws a transmissive bottle as flat opaque
+ * plastic, which is why it is not used here.
+ *
+ * iOS has no WebXR at all, so it hands off to AR Quick Look.
  */
-function ViewInSpace({ product }: { product: Product }) {
-  const [platform, setPlatform] = useState<'android' | 'ios' | 'other'>('other')
+function ViewInSpace({
+  product, arSupported, onViewInSpace,
+}: {
+  product: Product
+  arSupported: boolean | null
+  onViewInSpace: () => void
+}) {
+  const [quickLook, setQuickLook] = useState(false)
   const [state, setState] = useState<'idle' | 'preparing' | 'failed'>('idle')
   const anchor = useRef<HTMLAnchorElement>(null)
 
   useEffect(() => {
-    setPlatform(isAndroid() ? 'android' : supportsQuickLook() ? 'ios' : 'other')
+    setQuickLook(supportsQuickLook())
   }, [])
 
-  // Builtin demo models are React components with no file to hand over.
   const convertible = !product.url.startsWith('builtin:')
 
-  if (platform === 'android' && convertible) {
-    const absolute = new URL(product.url, location.href).href
+  // Android (and anything else with WebXR): render in-page.
+  if (arSupported) {
     return (
-      <a className="btn btn-link" href={sceneViewerUrl(absolute, product.name)}>
+      <button className="btn" onClick={onViewInSpace}>
         View in your space
-      </a>
+      </button>
     )
   }
 
-  if (platform === 'ios' && convertible) {
+  if (quickLook && convertible) {
     const open = async () => {
       setState('preparing')
       try {
@@ -174,7 +179,9 @@ function ViewInSpace({ product }: { product: Product }) {
         View in your space
       </button>
       <p className="sub" style={{ marginTop: 10, textAlign: 'center' }}>
-        Open this page on an Android phone or an iPhone to place it in your room.
+        {arSupported === null
+          ? 'Checking…'
+          : 'Open on an Android phone or an iPhone to place this in your room.'}
       </p>
     </>
   )
@@ -183,9 +190,13 @@ function ViewInSpace({ product }: { product: Product }) {
 export function ProductPage({
   product,
   onBack,
+  onViewInSpace,
+  arSupported,
 }: {
   product: Product
   onBack: () => void
+  onViewInSpace: () => void
+  arSupported: boolean | null
 }) {
   const ctrl = useRef<Orbit>({
     yaw: 0,
@@ -252,7 +263,7 @@ export function ProductPage({
       )}
 
       <div style={{ marginTop: 26 }}>
-        <ViewInSpace product={product} />
+        <ViewInSpace product={product} arSupported={arSupported} onViewInSpace={onViewInSpace} />
       </div>
 
       {(product.dimensions || product.specs?.length) && (
