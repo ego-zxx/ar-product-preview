@@ -38,10 +38,25 @@ not, so it needs HTTPS.
 
 | | Android Chrome | iOS Safari |
 |---|---|---|
-| WebXR AR | yes | **no** — Apple ships no `immersive-ar` on iPhone |
+| WebXR AR (in-page, multi-object) | yes | **no** — Apple ships no `immersive-ar` |
+| AR Quick Look (system viewer, one model) | — | yes |
 
 There is no browser workaround on iOS: every iOS browser is required to use
-WebKit. `public/ios-spike.html` is a free marker-tracking fallback (MindAR).
+WebKit. So the two platforms get different experiences, and the UI says so
+rather than pretending otherwise:
+
+- **Android** runs the in-page WebXR scene — place several products, adjust
+  them, lock them, leave them in the room together.
+- **iOS** hands off to Apple's AR Quick Look from the product page. Quick Look
+  is a full-screen system viewer showing **one** model; it cannot place several
+  products together, and the page gets no control or feedback while it is open.
+
+`src/usdz.ts` generates the USDZ that Quick Look needs in the browser, from the
+GLB already being served, so there is one asset per product rather than two.
+This mirrors what `<model-viewer>` does for its `quick-look` AR mode when no
+`ios-src` is supplied. Output verified with `usdchecker --arkit`.
+
+`public/ios-spike.html` is an older marker-tracking experiment (MindAR).
 
 ### Per-device AR features
 

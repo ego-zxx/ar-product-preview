@@ -1,7 +1,7 @@
 import { Suspense, useEffect, useRef } from 'react'
 import { useFrame, useLoader, useThree } from '@react-three/fiber'
 import {
-  DirectionalLight, DoubleSide, Group, Matrix4, Mesh, Object3D, Plane,
+  Box3, DirectionalLight, DoubleSide, Group, Matrix4, Mesh, Object3D, Plane,
   PMREMGenerator, Quaternion, Raycaster, Vector2, Vector3,
 } from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
@@ -166,14 +166,36 @@ export function DepthOcclusion() {
   return null
 }
 
+/**
+ * Offset that puts a model's bounding box on the ground and centred over the
+ * origin. Uploaded models are authored around arbitrary origins — usually the
+ * centre, sometimes a corner — and the AR scene assumes base-at-y=0. Without
+ * this a centred model sinks half its height into the table.
+ */
+export const groundingOffset = (min: Vector3, max: Vector3) => ({
+  x: -(min.x + max.x) / 2,
+  y: -min.y,
+  z: -(min.z + max.z) / 2,
+})
+
 function GltfModel({ url, scale }: { url: string; scale: number }) {
   const gltf = useLoader(GLTFLoader, url)
   const scene = useRef<Object3D | null>(null)
   if (!scene.current) {
-    scene.current = gltf.scene.clone(true)
-    scene.current.traverse((o) => {
+    const root = gltf.scene.clone(true)
+    root.traverse((o) => {
       if ((o as Mesh).isMesh) o.castShadow = true
     })
+    // ground and centre in the model's own units; the product scale is applied
+    // by the parent, so the offset scales with it
+    const box = new Box3().setFromObject(root)
+    if (!box.isEmpty()) {
+      const o = groundingOffset(box.min, box.max)
+      root.position.set(o.x, o.y, o.z)
+    }
+    const holder = new Group()
+    holder.add(root)
+    scene.current = holder
   }
   return <primitive object={scene.current} scale={scale} />
 }

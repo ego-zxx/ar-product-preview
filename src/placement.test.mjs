@@ -299,3 +299,15 @@ for (const a of [0.3, 1.1, 2.4, -2.0]) {
 }
 
 console.log('spring + face-camera ok')
+
+// --- grounding uploaded models (mirrors groundingOffset in ARScene.tsx) ---
+const groundingOffset = (min, max) => ({ x: -(min.x + max.x) / 2 + 0, y: -min.y + 0, z: -(min.z + max.z) / 2 + 0 })
+// a model authored around its centre (the common case) must be lifted by half its height
+{ const o = groundingOffset({ x: -1, y: -0.5, z: -1 }, { x: 1, y: 0.5, z: 1 }); assert.deepEqual(o, { x: 0, y: 0.5, z: 0 }, 'centred model lifted onto the ground') }
+// a model already on the ground is left alone vertically
+{ const o = groundingOffset({ x: -1, y: 0, z: -1 }, { x: 1, y: 2, z: 1 }); assert.equal(o.y, 0, 'grounded model not moved') }
+// a model authored from a corner is centred over the origin
+{ const o = groundingOffset({ x: 0, y: 0, z: 0 }, { x: 4, y: 1, z: 2 }); assert.deepEqual(o, { x: -2, y: 0, z: -1 }, 'corner-origin model centred') }
+// one floating above the ground is brought down, not left hovering
+{ const o = groundingOffset({ x: 0, y: 3, z: 0 }, { x: 1, y: 4, z: 1 }); assert.equal(o.y, -3, 'floating model brought to ground') }
+console.log('model grounding ok')

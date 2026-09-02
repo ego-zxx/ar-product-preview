@@ -152,9 +152,12 @@ export function Admin() {
     if (!file || !form.name) return
     setBusy('Uploading…')
     try {
+      // Authenticate with the session, not `key` — signIn() clears `key` once it
+      // has exchanged it, so this sent an empty credential and every upload
+      // failed with "unauthorized".
       const up = await fetch(apiUrl('/api/admin/upload'), {
         method: 'PUT',
-        headers: { 'x-admin-key': key, 'x-filename': file.name },
+        headers: { 'x-admin-session': session?.token ?? '', 'x-filename': file.name },
         body: file,
       })
       const upJson = await up.json()
