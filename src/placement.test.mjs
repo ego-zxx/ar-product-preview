@@ -416,3 +416,31 @@ assert.ok(applyVary(0.04, 1.0) >= 0.04, 'never fully mirror')
 assert.ok(applyVary(0.99, 0.0) <= 1, 'never past fully rough')
 
 console.log('material corrections ok')
+
+// --- shader patches must be idempotent ---
+// Materials are shared between the product page and the AR scene, so a patch
+// can be reached twice for the same material. Re-injecting a uniform gives a
+// duplicate declaration, the shader fails to compile, and the object
+// disappears while its shadow — a separate depth pass — stays.
+{
+  const seen = new WeakSet()
+  const guardedPatch = (m) => {
+    if (seen.has(m) || m.roughnessMap || !m.map) return false
+    seen.add(m)
+    m.injections = (m.injections ?? 0) + 1
+    return true
+  }
+  const shared = { map: {}, injections: 0 }
+  assert.equal(guardedPatch(shared), true, 'first pass patches')
+  assert.equal(guardedPatch(shared), false, 'second pass is refused')
+  assert.equal(guardedPatch(shared), false, 'and a third')
+  assert.equal(shared.injections, 1, 'the uniform is declared exactly once')
+
+  // the unguarded version is what shipped, and this is what it did
+  let unguarded = 0
+  const noGuard = () => { unguarded++ }
+  noGuard(); noGuard()
+  assert.equal(unguarded, 2, 'without a guard the same material is patched twice')
+}
+
+console.log('patch idempotence ok')

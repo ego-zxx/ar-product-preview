@@ -34,8 +34,18 @@ export function correctMetalness(m: MeshStandardMaterial): boolean {
  * but far closer than a constant — and only applied where the author supplied
  * nothing better.
  */
+/**
+ * Materials are shared between clones — the product page and the AR scene load
+ * the same cached glTF — so this can be reached more than once for the same
+ * material. Without a guard each pass re-injects `uniform float uRoughVary`,
+ * and a duplicate declaration fails to compile: the object vanishes while its
+ * shadow, drawn by a separate depth pass, remains.
+ */
+const varied = new WeakSet<MeshStandardMaterial>()
+
 export function varyRoughness(m: MeshStandardMaterial): boolean {
-  if (m.roughnessMap || !m.map) return false
+  if (varied.has(m) || m.roughnessMap || !m.map) return false
+  varied.add(m)
   const previous = m.onBeforeCompile
   m.onBeforeCompile = function (shader, renderer) {
     previous?.call(this, shader, renderer)
