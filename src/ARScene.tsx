@@ -129,22 +129,22 @@ export function DiagnosticsProbe({ lit, onSample }: { lit: boolean; onSample: (d
     frames.current = 0
     since.current = now
 
-    const session = gl.xr.getSession()
-    const layer = session?.renderState.baseLayer
-    const fb = layer
-      ? `${layer.framebufferWidth}x${layer.framebufferHeight} vs ${Math.round(
-          window.innerWidth * devicePixelRatio,
-        )}x${Math.round(window.innerHeight * devicePixelRatio)}`
-      : 'n/a'
+    // renderState.baseLayer is null when three renders through a projection
+    // layer, which is the modern path — read the live drawing buffer instead.
+    const ctx = gl.getContext()
+    const screen = `${Math.round(window.innerWidth * devicePixelRatio)}x${Math.round(
+      window.innerHeight * devicePixelRatio,
+    )}`
+    const fb = `${ctx.drawingBufferWidth}x${ctx.drawingBufferHeight} vs ${screen}`
 
     let anisotropy = 0
     let shadowFrom = 'none'
     scene.traverse((o) => {
       const m = (o as Mesh).material as { map?: { anisotropy?: number } } | undefined
       if (m?.map?.anisotropy) anisotropy = Math.max(anisotropy, m.map.anisotropy)
-      const l = o as unknown as { isDirectionalLight?: boolean; castShadow?: boolean; parent?: { type?: string } }
+      const l = o as unknown as { isDirectionalLight?: boolean; castShadow?: boolean; parent?: { name?: string } }
       if (l.isDirectionalLight && l.castShadow) {
-        shadowFrom = l.parent?.type === 'XREstimatedLight' ? 'room' : 'fixed'
+        shadowFrom = l.parent?.name === 'room-light' ? 'room' : 'fixed'
       }
     })
     onSample({ fps, lit, occlusion: occlusionStatus().enabled, fb, anisotropy, shadowFrom })
@@ -156,9 +156,12 @@ export function EstimatedLighting({ onActive }: { onActive: (on: boolean) => voi
   const { gl, scene } = useThree()
   useEffect(() => {
     const xrLight = new XREstimatedLight(gl, true)
+    // XREstimatedLight extends Group without setting .type, so it reports as
+    // 'Group'. Tag it, or nothing downstream can tell whose light this is.
+    xrLight.name = 'room-light'
     // shadows should come from the estimated key light, not a fixed one
     xrLight.directionalLight.castShadow = true
-    xrLight.directionalLight.shadow.mapSize.set(2048, 2048)
+    xrLight.directionalLight.shadow.mapSize.set(1024, 1024)
     // indoor light is diffuse; a crisp shadow edge is one of the loudest CG tells
     xrLight.directionalLight.shadow.radius = 9
     xrLight.directionalLight.shadow.camera.near = 0.1
@@ -315,7 +318,7 @@ export function KeyLight() {
       ref={light}
       intensity={1.15}
       castShadow
-      shadow-mapSize={[2048, 2048]}
+      shadow-mapSize={[1024, 1024]}
       shadow-radius={9}
       shadow-bias={-0.0004}
       shadow-normalBias={0.02}
