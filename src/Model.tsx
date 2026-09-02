@@ -4,6 +4,7 @@ import {
   Box3, CanvasTexture, DoubleSide, Group, Mesh, Object3D, SRGBColorSpace, Texture, Vector3,
 } from 'three'
 import { patchForGrain, stepGrain } from './grain'
+import { improveMaterial } from './materials'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { CoffeeCup, Faucet } from './models'
 import type { Product } from './products'
@@ -88,6 +89,7 @@ function GltfModel({ url, scale }: { url: string; scale: number }) {
       // is why it looked blurry at a distance and fine up close. three defaults
       // to 1 (off); native viewers enable it, hence the difference.
       for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+        improveMaterial(m)
         patchForGrain(m)
         for (const key of ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'emissiveMap'] as const) {
           const tex = (m as unknown as Record<string, Texture | null>)[key]

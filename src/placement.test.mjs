@@ -380,3 +380,39 @@ assert.ok(Math.abs(contactRadius(0.32, 0.32, 1) - 0.16) < 1e-9, 'a pizza gets a 
 assert.ok(contactRadius(0.32, 0.32, 1) > contactRadius(0.067, 0.067, 1), 'bigger footprint, bigger shade')
 
 console.log('material patching + contact shade ok')
+
+// --- material corrections (src/materials.ts) ---
+const METAL_FLOOR = 0.3
+const correctMetalness = (m) => {
+  if (m.metalnessMap || m.metalness === 0 || m.metalness >= METAL_FLOOR) return false
+  m.metalness = 0
+  return true
+}
+// the actual values measured in the burger: modelling noise on food
+assert.ok(correctMetalness({ metalness: 0.12 }), 'stray metalness on vegetables is corrected')
+assert.ok(correctMetalness({ metalness: 0.07 }), 'stray metalness on lettuce is corrected')
+// a real metal must survive untouched, or chrome taps turn to plastic
+const chrome = { metalness: 1 }
+assert.equal(correctMetalness(chrome), false, 'a true metal is left alone')
+assert.equal(chrome.metalness, 1, 'and keeps its value')
+assert.equal(correctMetalness({ metalness: 0.85 }), false, 'brushed metal is left alone')
+// an author who supplied a map meant it
+assert.equal(correctMetalness({ metalness: 0.1, metalnessMap: {} }), false, 'a metalness map is respected')
+// already correct, so no needless invalidation
+assert.equal(correctMetalness({ metalness: 0 }), false, 'a dielectric is not touched')
+
+// roughness variation only fills a gap, never overrides an author
+const varies = (m) => !(m.roughnessMap || !m.map)
+assert.ok(varies({ map: {} }), 'a model with no roughness map gets variation')
+assert.equal(varies({ map: {}, roughnessMap: {} }), false, 'an authored roughness map wins')
+assert.equal(varies({}), false, 'nothing to derive from without a colour map')
+
+// the shader keeps roughness in a sane range whatever the colour map does
+const applyVary = (base, lum, amount = 0.35) =>
+  Math.min(1, Math.max(0.04, base + (0.5 - lum) * amount))
+assert.ok(applyVary(0.27, 0.0) > 0.27, 'dark areas read rougher')
+assert.ok(applyVary(0.27, 1.0) < 0.27, 'bright areas read smoother')
+assert.ok(applyVary(0.04, 1.0) >= 0.04, 'never fully mirror')
+assert.ok(applyVary(0.99, 0.0) <= 1, 'never past fully rough')
+
+console.log('material corrections ok')
