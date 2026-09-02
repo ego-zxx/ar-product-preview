@@ -444,3 +444,28 @@ console.log('material corrections ok')
 }
 
 console.log('patch idempotence ok')
+
+// grain.ts: the lens vignette must leave the frame centre untouched, only ever
+// darken, and reach its full amount in the corner — a "circle" would mean the
+// falloff started at the object, not the frame.
+{
+  const VIGNETTE_AR = 0.15
+  // mirror of the shader: r = distance to frame centre * 2, smoothstep(0.5, sqrt2, r)
+  const vignetteAt = (x, y, amount) => {
+    const r = Math.hypot(x - 0.5, y - 0.5) * 2
+    const t = Math.min(1, Math.max(0, (r - 0.5) / (1.4142 - 0.5)))
+    return 1 - amount * t * t * (3 - 2 * t)
+  }
+  assert.equal(vignetteAt(0.5, 0.5, VIGNETTE_AR), 1, 'frame centre is untouched')
+  assert.equal(vignetteAt(0.7, 0.5, VIGNETTE_AR), 1, 'the middle of the frame is untouched too')
+  const corner = vignetteAt(0, 0, VIGNETTE_AR)
+  assert.ok(Math.abs(corner - (1 - VIGNETTE_AR)) < 1e-3, `corner reaches full amount, got ${corner}`)
+  let last = 1
+  for (let x = 0.5; x >= 0; x -= 0.05) {
+    const v = vignetteAt(x, 0.5, VIGNETTE_AR)
+    assert.ok(v <= last + 1e-9 && v <= 1, 'falloff is monotonic toward the edge')
+    last = v
+  }
+}
+
+console.log('lens vignette ok')

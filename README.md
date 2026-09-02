@@ -189,13 +189,22 @@ reading its source rather than guessing:
 - **Dragging** hit-tests ARCore on the touch's own ray (transient-input hit
   testing, profile `generic-touchscreen`), so the object follows real surfaces
   under the finger. Off any surface it holds height and settles on release.
-- **Shadows** are the object's real silhouette from an overhead key light
-  (`KeyLight` in `src/ARScene.tsx`), caught by a transparent `ShadowMaterial`
-  plane under each object. Map size is the quality/performance knob.
+- **Lighting** comes from the room: `XREstimatedLight` (`EstimatedLighting` in
+  `src/ARScene.tsx`) supplies the main directional light, spherical-harmonic
+  ambient and an HDR reflection cube map, which is the split ARCore's own
+  guidance prescribes. `KeyLight` is the fallback while no estimate exists.
+- **Shadows** are the object's real silhouette from that light, caught by a
+  transparent `ShadowMaterial` plane under the object, with a soft edge (indoor
+  light is diffuse). Map size is the quality/performance knob.
+- **Camera matching** (`src/grain.ts`, AR only): sensor grain and a lens
+  vignette so the object carries the feed's imperfections, not just its light.
+  Klein & Murray (ISMAR 2008) found the camera's artefacts, not the lighting,
+  are the biggest remaining tell once lighting is right; the two done here are
+  the ones that work per material, without a screen-space pass. Their top
+  three — lens distortion, defocus and chromatic aberration — need one, and
+  defocus would re-soften the object at distance, so they are not done.
 - **Placement** turns the product's front toward the camera.
-- Deliberately not adopted: pinch-to-scale (products are real size) and
-  `XREstimatedLight` (removed by request; it is the right way to bring room
-  lighting back if wanted).
+- Deliberately not adopted: pinch-to-scale (products are real size).
 
 ## Tests
 

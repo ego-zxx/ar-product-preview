@@ -1,9 +1,9 @@
 import { Suspense, useEffect, useRef } from 'react'
 import { useFrame, useLoader, useThree } from '@react-three/fiber'
 import {
-  Box3, CanvasTexture, DoubleSide, Group, Mesh, Object3D, SRGBColorSpace, Texture, Vector3,
+  Box3, CanvasTexture, DoubleSide, Group, Mesh, Object3D, SRGBColorSpace, Texture, Vector2, Vector3,
 } from 'three'
-import { patchForGrain, stepGrain } from './grain'
+import { grainUniforms, patchForGrain, stepGrain, VIGNETTE_AR } from './grain'
 import { improveMaterial } from './materials'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { CoffeeCup, Faucet } from './models'
@@ -75,8 +75,14 @@ function GltfModel({ url, scale, grounded }: { url: string; scale: number; groun
   const holder = useRef<Object3D | null>(null)
   const footprint = useRef(0.05)
   // advance the grain here so it animates wherever a model is shown, in AR and
-  // on the product page alike
-  useFrame((state) => stepGrain(state.clock.elapsedTime * 60))
+  // on the product page alike. In XR three resizes the drawing buffer to the
+  // XR framebuffer, so this is the size the vignette must be centred on.
+  const bufferSize = useRef(new Vector2())
+  useFrame((state) => {
+    const size = state.gl.getDrawingBufferSize(bufferSize.current)
+    stepGrain(state.clock.elapsedTime * 60, size.x, size.y)
+    grainUniforms.uVignette.value = grounded ? VIGNETTE_AR : 0
+  })
   if (!holder.current) {
     const root = gltf.scene.clone(true)
     root.traverse((o) => {
