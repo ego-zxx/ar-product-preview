@@ -203,6 +203,13 @@ reading its source rather than guessing:
   render's pure blacks and clean whites are a tell even under matched light.
 - **Shadow colour** follows the room's ambient (SH band 0 → `shadowTint`), as
   a photographed shadow is the surface lit by ambient alone, never black.
+- **Exposure** is matched to the feed, not left at 1. The room's ambient is
+  counted once (the estimated cube map supplies it, so the SH probe is hidden
+  while that map is in use — counting both made objects roughly twice as bright
+  as the room), the synthetic `RoomEnvironment` fallback is dimmed to
+  `ENV_FALLBACK_INTENSITY` so it cannot out-light a dim room, and a damped trim
+  from the measured room level darkens the render toward the auto-exposed feed.
+  `?debug=1` prints the room level and the trim; `EXPOSURE_REFERENCE` is the knob.
   Klein & Murray (ISMAR 2008) found the camera's artefacts, not the lighting,
   are the biggest remaining tell once lighting is right; the two done here are
   the ones that work per material, without a screen-space pass. Their top
