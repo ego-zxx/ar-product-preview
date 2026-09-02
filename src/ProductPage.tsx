@@ -3,7 +3,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { Box3, PMREMGenerator, Vector3, type Group, type PerspectiveCamera } from 'three'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { Model } from './ARScene'
-import { supportsQuickLook, usdzUrl } from './usdz'
+import { isAndroid, sceneViewerUrl, supportsQuickLook, usdzUrl } from './usdz'
 import type { Product } from './products'
 
 /** Studio lighting for the non-AR preview — no camera feed to match here. */
@@ -122,11 +122,13 @@ function ViewInSpace({
   onViewInSpace: () => void
 }) {
   const [quickLook, setQuickLook] = useState(false)
+  const [android, setAndroid] = useState(false)
   const [state, setState] = useState<'idle' | 'preparing' | 'failed'>('idle')
   const anchor = useRef<HTMLAnchorElement>(null)
 
   useEffect(() => {
     setQuickLook(supportsQuickLook())
+    setAndroid(isAndroid())
   }, [])
 
   // Builtin demo models are React components with no GLB to convert.
@@ -144,6 +146,26 @@ function ViewInSpace({
     } catch {
       setState('failed')
     }
+  }
+
+  // Android: hand off to Scene Viewer, the system counterpart to Quick Look.
+  if (android && convertible) {
+    const absolute = new URL(product.url, location.href).href
+    return (
+      <>
+        <a
+          className="btn"
+          style={{ marginTop: 26, display: 'block', textAlign: 'center', textDecoration: 'none' }}
+          href={sceneViewerUrl(absolute, product.name)}
+        >
+          View in your space
+        </a>
+        <p className="sub" style={{ marginTop: 10, textAlign: 'center' }}>
+          Opens in Google Scene Viewer, one product at a time. To place several
+          together, use <a href="#">the room preview</a>.
+        </p>
+      </>
+    )
   }
 
   if (quickLook && convertible) {

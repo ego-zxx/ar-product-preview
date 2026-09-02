@@ -3,6 +3,7 @@ import QRCode from 'qrcode'
 import type { Product } from './products'
 import { api as apiUrl } from './api'
 import { useConfirm } from './Confirm'
+import { bakeRealScale } from './bake'
 
 const TrashIcon = () => (
   <svg viewBox="0 0 256 256" aria-hidden="true">
@@ -150,21 +151,34 @@ export function Admin() {
   const addProduct = async () => {
     const file = fileRef.current?.files?.[0]
     if (!file || !form.name) return
-    setBusy('Uploading…')
+    const scale = Number(form.scale) > 0 ? Number(form.scale) : 1
+    setBusy(scale === 1 ? 'Uploading…' : 'Scaling…')
     try {
+      // Bake scale in: the system AR viewers get only a URL and read metres,
+      // so anything not stored at real size arrives wrong on both platforms.
+      const { blob, size } = await bakeRealScale(file, scale)
+      setBusy('Uploading…')
       // Authenticate with the session, not `key` — signIn() clears `key` once it
       // has exchanged it, so this sent an empty credential and every upload
       // failed with "unauthorized".
       const up = await fetch(apiUrl('/api/admin/upload'), {
         method: 'PUT',
         headers: { 'x-admin-session': session?.token ?? '', 'x-filename': file.name },
-        body: file,
+        body: blob,
       })
       const upJson = await up.json()
       if (!up.ok) throw new Error(upJson.error)
       const res = await api('/api/admin/products', {
         method: 'POST',
-        body: JSON.stringify({ ...form, url: upJson.url }),
+        // scale is baked into the file now, so the record carries 1
+        body: JSON.stringify({
+          ...form,
+          scale: 1,
+          url: upJson.url,
+          dimensions:
+            form.dimensions ||
+            `${Math.round(size.x * 1000)} × ${Math.round(size.y * 1000)} × ${Math.round(size.z * 1000)} mm`,
+        }),
       })
       if (!res.ok) throw new Error((await res.json()).error)
       setForm({

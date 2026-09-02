@@ -25,6 +25,32 @@ export const isIOS = () =>
 export const supportsQuickLook = () =>
   isIOS() && document.createElement('a').relList?.supports?.('ar') === true
 
+export const isAndroid = () => /android/i.test(navigator.userAgent)
+
+/**
+ * Intent URL that hands a model to Android's Scene Viewer.
+ *
+ * Scene Viewer reads glTF as 1 unit = 1 metre and takes no scale parameter, so
+ * the file must already be at real size — see bake.ts. `resizable=false` stops
+ * the user pinching a product away from its true dimensions, which is the whole
+ * point of previewing it. It must be an absolute https URL: Scene Viewer is a
+ * separate app and cannot read blob: or relative URLs.
+ */
+export function sceneViewerUrl(absoluteGlbUrl: string, title: string) {
+  const params = new URLSearchParams({
+    file: absoluteGlbUrl,
+    mode: 'ar_preferred',
+    resizable: 'false',
+    title,
+  })
+  const fallback = encodeURIComponent(location.href)
+  return (
+    `intent://arvr.google.com/scene-viewer/1.0?${params}` +
+    `#Intent;scheme=https;package=com.google.ar.core;action=android.intent.action.VIEW;` +
+    `S.browser_fallback_url=${fallback};end;`
+  )
+}
+
 const cache = new Map<string, string>()
 
 /**
