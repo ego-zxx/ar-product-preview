@@ -24,6 +24,35 @@ export const grainUniforms = {
   uVignette: { value: 0 },
   // 1 in AR: shape the object's tones like the camera's ISP shapes the feed
   uPlate: { value: 0 },
+  // silhouette feather width in pixels; 0 outside AR
+  uEdgeFeather: { value: 0 },
+}
+
+/**
+ * Light wrap and edge softness, done by the compositor instead of by us.
+ *
+ * A compositor wraps background light around a foreground element's edge and
+ * feathers its matte, because a photographed edge is never one pixel wide. In
+ * a WebXR session the camera feed is not ours to sample — the system composites
+ * it behind our layer — so a screen-space light wrap is impossible. But the
+ * blend it performs is alpha-blend, and the alpha is ours. Feathering the
+ * outermost pixels of the silhouette therefore makes the compositor mix the
+ * real background into the object's edge: a true light wrap against the actual
+ * room, not an approximation of it, and a soft matte in the same stroke.
+ *
+ * The width is measured in pixels via fwidth, so it stays constant whatever
+ * the surface curvature — a geometric falloff alone would feather a flat panel
+ * across half its face and a tight bevel not at all.
+ */
+export const EDGE_FEATHER_AR = 1.8
+/** How much of the real background shows through at the silhouette. */
+export const EDGE_ALPHA = 0.45
+
+/** Mirror of the shader, for the test: 1 at the centre, EDGE_ALPHA at the rim. */
+export const featherAt = (ndv: number, texelWidth: number, pixels: number) => {
+  if (pixels <= 0) return 1
+  const t = Math.min(1, Math.max(0, ndv / Math.max(texelWidth * pixels, 1e-6)))
+  return EDGE_ALPHA + (1 - EDGE_ALPHA) * t * t * (3 - 2 * t)
 }
 
 /**
@@ -48,10 +77,23 @@ export const stepGrain = (t: number, width = 1, height = 1) => {
 
 const patched = new WeakSet<Material>()
 
+const FEATHER = `
+        {
+          // distance from the silhouette, where the surface turns away from us
+          float ndv = abs(dot(normalize(normal), normalize(vViewPosition)));
+          // fwidth converts that to screen pixels, so the band is a fixed width
+          float band = fwidth(ndv) * uEdgeFeather;
+          float edge = smoothstep(0.0, max(band, 1e-6), ndv);
+          gl_FragColor.a *= mix(1.0, mix(${EDGE_ALPHA.toFixed(2)}, 1.0, edge), step(0.001, uEdgeFeather));
+        }`
+
 /** Chains onto any existing onBeforeCompile rather than replacing it. */
 export function patchForGrain(material: Material) {
   if (patched.has(material)) return
   patched.add(material)
+  // the feather reads `normal` and `vViewPosition`, which only the lit
+  // materials declare; an unlit material would fail to compile
+  const lit = (material as { isMeshStandardMaterial?: boolean }).isMeshStandardMaterial === true
   const previous = material.onBeforeCompile
   material.onBeforeCompile = (shader, renderer) => {
     previous?.call(material, shader, renderer)
@@ -64,7 +106,8 @@ export function patchForGrain(material: Material) {
         uniform float uGrainAmount;
         uniform vec2 uLensRes;
         uniform float uVignette;
-        uniform float uPlate;`,
+        uniform float uPlate;
+        uniform float uEdgeFeather;`,
       )
       .replace(
         '#include <dithering_fragment>',
@@ -87,7 +130,7 @@ export function patchForGrain(material: Material) {
           // scale with darkness, as real sensor noise does
           float shade = 1.0 - dot(gl_FragColor.rgb, vec3(0.299, 0.587, 0.114));
           gl_FragColor.rgb += (n - 0.5) * uGrainAmount * (0.4 + shade);
-        }`,
+        }` + (lit ? FEATHER : ''),
       )
   }
   material.needsUpdate = true

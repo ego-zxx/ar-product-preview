@@ -211,11 +211,28 @@ reading its source rather than guessing:
   from the measured room level darkens the render toward the auto-exposed feed.
   `?debug=1` prints the room level and the trim; `EXPOSURE_REFERENCE` is the knob.
   Klein & Murray (ISMAR 2008) found the camera's artefacts, not the lighting,
-  are the biggest remaining tell once lighting is right; the two done here are
-  the ones that work per material, without a screen-space pass. Their top
-  three — lens distortion, defocus and chromatic aberration — need one, and
-  defocus would re-soften the object at distance, so they are not done.
+  are the biggest remaining tell once lighting is right.
+- **Light wrap and edge softness** are done by the XR compositor rather than
+  by us. The camera feed is never ours to sample, but the session composites it
+  behind our layer in alpha-blend mode, so feathering alpha across the outermost
+  pixels of the silhouette makes the compositor mix the *real* background into
+  the object's edge. That is a true light wrap against the actual room, plus a
+  soft matte, for the cost of one line. The width is measured in screen pixels
+  via `fwidth`, so a tight bevel and a flat panel feather identically.
+- **Halation** (`src/halation.tsx`) is the one effect that cannot be per
+  material: light bleeding out of a highlight is a screen-space operation. In a
+  session three renders into a framebuffer the compositor owns, so the pass
+  notes that binding, renders a quarter-resolution bright pass into its own
+  target, restores the binding, and adds the glow back through a full-screen
+  quad in the scene. The session's render path is never taken over. The glow
+  adds alpha as well as colour, so it spills onto the real room rather than
+  stopping at the object's edge. It disables itself below `MIN_FPS`;
+  `?nohalation=1` turns it off outright and `?debug=1` reports whether it ran.
 - **Placement** turns the product's front toward the camera.
+- Material corrections in `src/materials.ts` are compensations for weak assets
+  and disable themselves on well-authored ones: metalness is only snapped when
+  there is no metalnessMap, roughness only varied when there is no
+  roughnessMap. A model with a full PBR set is rendered as authored.
 - Deliberately not adopted: pinch-to-scale (products are real size).
 
 ## Tests

@@ -15,6 +15,7 @@ import { CoffeeCup, Faucet } from './models'
 import type { Product } from './products'
 import { Model, groundingOffset } from './Model'
 import { shadowTint } from './materials'
+import { halationStatus } from './halation'
 import { occlusionStatus, patchForOcclusion, updateOcclusion } from './occlusion'
 
 const UP = new Vector3(0, 1, 0)
@@ -118,6 +119,8 @@ export type Diag = {
   /** room brightness from the light estimate, and the exposure trim it drives */
   ambient: number
   exposure: number
+  /** whether the halation pass is running, or gave up on frame rate */
+  halation: boolean
 }
 
 /**
@@ -149,6 +152,7 @@ export function DiagnosticsProbe({ lit, onSample }: { lit: boolean; onSample: (d
     const fb = `${ctx.drawingBufferWidth}x${ctx.drawingBufferHeight} vs ${screen}`
 
     const ambient = Number(roomLight.ambient.toFixed(2))
+    const halation = halationStatus.on
     const exposure = Number(gl.toneMappingExposure.toFixed(2))
     let anisotropy = 0
     let shadowFrom = 'none'
@@ -160,7 +164,7 @@ export function DiagnosticsProbe({ lit, onSample }: { lit: boolean; onSample: (d
         shadowFrom = l.parent?.name === 'room-light' ? 'room' : 'fixed'
       }
     })
-    onSample({ fps, lit, occlusion: occlusionStatus().enabled, fb, anisotropy, shadowFrom, ambient, exposure })
+    onSample({ fps, lit, occlusion: occlusionStatus().enabled, fb, anisotropy, shadowFrom, ambient, exposure, halation })
   })
   return null
 }

@@ -522,3 +522,58 @@ console.log('plate response ok')
 }
 
 console.log('exposure matching ok')
+
+// grain.ts silhouette feather: the compositor blends the real camera feed
+// through whatever alpha we leave, so the feather must be a fixed pixel width
+// (not a fixed angle) and must never touch the interior of the object.
+{
+  const EDGE_ALPHA = 0.45
+  const featherAt = (ndv, texel, pixels) => {
+    if (pixels <= 0) return 1
+    const t = Math.min(1, Math.max(0, ndv / Math.max(texel * pixels, 1e-6)))
+    return EDGE_ALPHA + (1 - EDGE_ALPHA) * t * t * (3 - 2 * t)
+  }
+  const texel = 0.01, px = 1.8
+  assert.equal(featherAt(1, texel, px), 1, 'a surface facing the camera stays opaque')
+  assert.equal(featherAt(0.5, texel, px), 1, 'the interior is untouched')
+  assert.equal(featherAt(0, texel, px), EDGE_ALPHA, 'the silhouette lets the room through')
+  assert.equal(featherAt(0, texel, 0), 1, 'no feather outside AR')
+
+  // curvature must not change the width: a tight bevel and a flat panel both
+  // get the same band, which is the whole point of measuring in pixels
+  const tight = featherAt(0.004, 0.004, px)
+  const flat = featherAt(0.1, 0.1, px)
+  assert.ok(Math.abs(tight - flat) < 1e-9, 'feather width is curvature independent')
+
+  let last = -1
+  for (let n = 0; n <= 0.05; n += 0.001) {
+    const a = featherAt(n, texel, px)
+    assert.ok(a >= last - 1e-9, 'alpha rises monotonically away from the silhouette')
+    assert.ok(a >= EDGE_ALPHA && a <= 1, `alpha stays in range, got ${a}`)
+    last = a
+  }
+}
+
+console.log('silhouette feather ok')
+
+// halation.tsx bright pass: only highlights bleed, and the blur must conserve
+// energy or the glow changes brightness with radius.
+{
+  const THRESHOLD = 0.72, KNEE = 0.28
+  const brightPass = (l) => {
+    const s = Math.min(1, Math.max(0, (l - THRESHOLD) / KNEE))
+    return l * s * s
+  }
+  assert.equal(brightPass(0.5), 0, 'mid-tones do not bleed')
+  assert.equal(brightPass(THRESHOLD), 0, 'the threshold itself does not bleed')
+  assert.ok(brightPass(0.85) > 0, 'a highlight bleeds')
+  assert.ok(brightPass(1) > brightPass(0.85), 'brighter bleeds more')
+  // soft knee: no step at the threshold, or highlights would pop as they move
+  assert.ok(brightPass(THRESHOLD + 0.01) < 0.01, 'the knee is soft, not a step')
+
+  const weights = [0.227027, 0.194595, 0.121622, 0.054054, 0.016216]
+  const total = weights[0] + 2 * (weights[1] + weights[2] + weights[3] + weights[4])
+  assert.ok(Math.abs(total - 1) < 1e-3, `blur conserves energy, sums to ${total}`)
+}
+
+console.log('halation bright pass ok')

@@ -7,6 +7,7 @@ import {
   type Diag,
   newGesture, type Draft, type Gesture, type Placed,
 } from './ARScene'
+import { Halation } from './halation'
 import { useAccess } from './access'
 import { fetchProducts, type Product } from './products'
 import { ProductPage } from './ProductPage'
@@ -389,6 +390,7 @@ export function App() {
       >
         <XR store={store}>
           <Env />
+          <Halation />
           <PlaneOcclusion />
           <DepthOcclusion />
           <EstimatedLighting onActive={setLitByRoom} />
@@ -467,7 +469,8 @@ shadow ${diag.shadowFrom}
 occlusion ${diag.occlusion ? 'on' : 'off'}
 framebuffer ${diag.fb}
 anisotropy ${diag.anisotropy}
-room light ${diag.ambient} · exposure ${diag.exposure}`}
+room light ${diag.ambient} · exposure ${diag.exposure}
+halation ${diag.halation ? 'on' : 'off'}`}
               </div>
             )}
             <div className="ar-status">

@@ -3,7 +3,7 @@ import { useFrame, useLoader, useThree } from '@react-three/fiber'
 import {
   Box3, CanvasTexture, DoubleSide, Group, Mesh, Object3D, ShadowMaterial, SRGBColorSpace, Texture, Vector2, Vector3,
 } from 'three'
-import { grainUniforms, patchForGrain, stepGrain, VIGNETTE_AR } from './grain'
+import { EDGE_FEATHER_AR, grainUniforms, patchForGrain, stepGrain, VIGNETTE_AR } from './grain'
 import { improveMaterial, shadowTint } from './materials'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { CoffeeCup, Faucet } from './models'
@@ -85,6 +85,7 @@ function GltfModel({ url, scale, grounded }: { url: string; scale: number; groun
     stepGrain(state.clock.elapsedTime * 60, size.x, size.y)
     grainUniforms.uVignette.value = grounded ? VIGNETTE_AR : 0
     grainUniforms.uPlate.value = grounded ? 1 : 0
+    grainUniforms.uEdgeFeather.value = grounded ? EDGE_FEATHER_AR : 0
   })
   if (!holder.current) {
     const root = gltf.scene.clone(true)
