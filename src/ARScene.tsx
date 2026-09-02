@@ -14,7 +14,7 @@ import { Damper } from './damper'
 import { CoffeeCup, Faucet } from './models'
 import type { Product } from './products'
 import { Model, groundingOffset } from './Model'
-import { patchForOcclusion, updateOcclusion } from './occlusion'
+import { occlusionStatus, patchForOcclusion, updateOcclusion } from './occlusion'
 
 const UP = new Vector3(0, 1, 0)
 
@@ -99,6 +99,59 @@ export const faceCameraYaw = (dirX: number, dirZ: number) => Math.atan2(-dirX, -
  * XREstimatedLight is used rather than a hand-rolled probe: it handles the
  * cube map format negotiation and the frame plumbing correctly.
  */
+export type Diag = {
+  fps: number
+  lit: boolean
+  occlusion: boolean
+  /** actual XR framebuffer vs the screen — reveals resolution loss */
+  fb: string
+  anisotropy: number
+  shadowFrom: string
+}
+
+/**
+ * Live readout of what the renderer is actually doing, behind ?debug=1.
+ *
+ * Several rounds of "make it more realistic" were spent reasoning about
+ * lighting that may never have switched on. This reports the facts instead:
+ * whether the room estimate is driving the scene, what resolution the session
+ * really renders at, and whether occlusion is running.
+ */
+export function DiagnosticsProbe({ lit, onSample }: { lit: boolean; onSample: (d: Diag) => void }) {
+  const { gl, scene } = useThree()
+  const frames = useRef(0)
+  const since = useRef(performance.now())
+  useFrame(() => {
+    frames.current++
+    const now = performance.now()
+    if (now - since.current < 1000) return
+    const fps = Math.round((frames.current * 1000) / (now - since.current))
+    frames.current = 0
+    since.current = now
+
+    const session = gl.xr.getSession()
+    const layer = session?.renderState.baseLayer
+    const fb = layer
+      ? `${layer.framebufferWidth}x${layer.framebufferHeight} vs ${Math.round(
+          window.innerWidth * devicePixelRatio,
+        )}x${Math.round(window.innerHeight * devicePixelRatio)}`
+      : 'n/a'
+
+    let anisotropy = 0
+    let shadowFrom = 'none'
+    scene.traverse((o) => {
+      const m = (o as Mesh).material as { map?: { anisotropy?: number } } | undefined
+      if (m?.map?.anisotropy) anisotropy = Math.max(anisotropy, m.map.anisotropy)
+      const l = o as unknown as { isDirectionalLight?: boolean; castShadow?: boolean; parent?: { type?: string } }
+      if (l.isDirectionalLight && l.castShadow) {
+        shadowFrom = l.parent?.type === 'XREstimatedLight' ? 'room' : 'fixed'
+      }
+    })
+    onSample({ fps, lit, occlusion: occlusionStatus().enabled, fb, anisotropy, shadowFrom })
+  })
+  return null
+}
+
 export function EstimatedLighting({ onActive }: { onActive: (on: boolean) => void }) {
   const { gl, scene } = useThree()
   useEffect(() => {

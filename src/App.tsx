@@ -3,7 +3,8 @@ import { Canvas } from '@react-three/fiber'
 import { Matrix4, NeutralToneMapping } from 'three'
 import { XR, XRDomOverlay, createXRStore, useXR } from '@react-three/xr'
 import {
-  DepthOcclusion, Env, EstimatedLighting, KeyLight, PlaneOcclusion, Placement,
+  DepthOcclusion, DiagnosticsProbe, Env, EstimatedLighting, KeyLight, PlaneOcclusion, Placement,
+  type Diag,
   newGesture, type Draft, type Gesture, type Placed,
 } from './ARScene'
 import { useAccess } from './access'
@@ -64,6 +65,9 @@ export function App() {
   const [hasSurface, setHasSurface] = useState(false)
   // real room lighting has taken over from the static rig
   const [litByRoom, setLitByRoom] = useState(false)
+  // ?debug=1 shows what the renderer is actually doing, for reporting back
+  const debug = useMemo(() => new URLSearchParams(location.search).has('debug'), [])
+  const [diag, setDiag] = useState<Diag | null>(null)
   const [uiHidden, setUiHidden] = useState(false)
   const [route, setRoute] = useState(() => location.hash)
   const uiHiddenRef = useRef(false)
@@ -388,6 +392,7 @@ export function App() {
           <PlaneOcclusion />
           <DepthOcclusion />
           <EstimatedLighting onActive={setLitByRoom} />
+          {debug && <DiagnosticsProbe lit={litByRoom} onSample={setDiag} />}
           {/* static rig only until the room's own lighting is available */}
           {!litByRoom && (
             <>
@@ -454,6 +459,16 @@ export function App() {
             </div>
 
             {/* One status line, not three competing pills. */}
+            {debug && diag && (
+              <div className="ar-debug">
+                {`fps ${diag.fps}
+lighting ${diag.lit ? 'ROOM ✓' : 'fixed rig ✗'}
+shadow ${diag.shadowFrom}
+occlusion ${diag.occlusion ? 'on' : 'off'}
+framebuffer ${diag.fb}
+anisotropy ${diag.anisotropy}`}
+              </div>
+            )}
             <div className="ar-status">
               <span className="ar-status-pill" data-warn={!hasSurface && !draft}>
                 {!hasSurface && !draft
