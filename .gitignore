@@ -10,3 +10,7 @@ server/db.json
 server/uploads/
 # self-signed TLS key + cert for LAN testing
 certs/
+
+# vercel CLI project link + the token it drops locally
+.vercel
+.env.local
