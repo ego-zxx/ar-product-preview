@@ -197,15 +197,19 @@ createServer(async (req, res) => {
   }
 
   // serve uploaded models
-  if (req.method === 'GET' && path.startsWith('/models/')) {
+  // HEAD as well as GET: AR viewers, CDNs and link previewers probe with HEAD
+  // before downloading, and a 404 there can stop the model loading at all.
+  if ((req.method === 'GET' || req.method === 'HEAD') && path.startsWith('/models/')) {
     const file = basename(path)
     try {
       const buf = readFileSync(new URL(file, UPLOADS))
       res.writeHead(200, {
         'content-type': MIME[extname(file)] ?? 'application/octet-stream',
+        'content-length': buf.length,
         ...CORS,
       })
-      res.end(buf)
+      // a HEAD reply carries the headers but no body
+      res.end(req.method === 'HEAD' ? undefined : buf)
     } catch {
       res.writeHead(404, CORS).end('not found')
     }
