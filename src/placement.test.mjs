@@ -343,3 +343,40 @@ assert.ok(MIN > 0, 'near limit never reaches the model centre')
 assert.ok(Number.isFinite(zoom(200, 0, D, MIN, MAX)), 'a degenerate gap stays finite')
 
 console.log('pinch zoom ok')
+
+// --- material patching must compose, not overwrite ---
+// grain.ts and occlusion.ts both hook onBeforeCompile on the same material.
+// Whichever ran second used to replace the first, silently dropping its shader
+// injection. Both now chain onto whatever was already there.
+{
+  const calls = []
+  const material = { onBeforeCompile: null, needsUpdate: false }
+
+  const chain = (label) => {
+    const previous = material.onBeforeCompile
+    material.onBeforeCompile = function (shader, renderer) {
+      previous?.call(this, shader, renderer)
+      calls.push(label)
+    }
+  }
+  chain('occlusion')
+  chain('grain')
+  material.onBeforeCompile({}, {})
+  assert.deepEqual(calls, ['occlusion', 'grain'], 'both patches run, in order applied')
+
+  // and a material with no prior hook still works
+  const fresh = { onBeforeCompile: null }
+  const seen = []
+  const previous = fresh.onBeforeCompile
+  fresh.onBeforeCompile = function (s, r) { previous?.call(this, s, r); seen.push('only') }
+  fresh.onBeforeCompile({}, {})
+  assert.deepEqual(seen, ['only'], 'chaining onto nothing is safe')
+}
+
+// --- contact shade scales with the object, not a fixed guess ---
+const contactRadius = (sizeX, sizeZ, scale) => Math.max(sizeX, sizeZ) * 0.5 * scale
+assert.ok(Math.abs(contactRadius(0.067, 0.067, 1) - 0.0335) < 1e-9, 'a bottle gets a small shade')
+assert.ok(Math.abs(contactRadius(0.32, 0.32, 1) - 0.16) < 1e-9, 'a pizza gets a wide one')
+assert.ok(contactRadius(0.32, 0.32, 1) > contactRadius(0.067, 0.067, 1), 'bigger footprint, bigger shade')
+
+console.log('material patching + contact shade ok')

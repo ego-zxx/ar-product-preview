@@ -137,7 +137,10 @@ export function patchForOcclusion(material: Material) {
   patched.add(material)
 
   patchedCount++
-  material.onBeforeCompile = (shader) => {
+  const previous = material.onBeforeCompile
+  material.onBeforeCompile = (shader, renderer) => {
+    // chain, so grain and occlusion can both patch the same material
+    previous?.call(material, shader, renderer)
     compiledCount++
     Object.assign(shader.uniforms, occlusionUniforms)
 

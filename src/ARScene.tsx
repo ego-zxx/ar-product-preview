@@ -158,7 +158,9 @@ export function EstimatedLighting({ onActive }: { onActive: (on: boolean) => voi
     const xrLight = new XREstimatedLight(gl, true)
     // shadows should come from the estimated key light, not a fixed one
     xrLight.directionalLight.castShadow = true
-    xrLight.directionalLight.shadow.mapSize.set(1024, 1024)
+    xrLight.directionalLight.shadow.mapSize.set(2048, 2048)
+    // indoor light is diffuse; a crisp shadow edge is one of the loudest CG tells
+    xrLight.directionalLight.shadow.radius = 9
     xrLight.directionalLight.shadow.camera.near = 0.1
     xrLight.directionalLight.shadow.camera.far = 12
     xrLight.directionalLight.shadow.camera.left = -2
@@ -283,7 +285,7 @@ function ShadowCatcher({ size = 0.5 }: { size?: number }) {
   return (
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.0012, 0]} receiveShadow renderOrder={1}>
       <planeGeometry args={[size, size]} />
-      <shadowMaterial transparent opacity={0.42} depthWrite={false} userData={{ noOcclusion: true }} />
+      <shadowMaterial transparent opacity={0.33} depthWrite={false} userData={{ noOcclusion: true }} />
     </mesh>
   )
 }
@@ -313,8 +315,8 @@ export function KeyLight() {
       ref={light}
       intensity={1.15}
       castShadow
-      shadow-mapSize={[1024, 1024]}
-      shadow-radius={5}
+      shadow-mapSize={[2048, 2048]}
+      shadow-radius={9}
       shadow-bias={-0.0004}
       shadow-normalBias={0.02}
       shadow-camera-left={-2}
