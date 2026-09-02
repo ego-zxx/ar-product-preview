@@ -36,41 +36,26 @@ not, so it needs HTTPS.
 
 ## Platform support
 
-Two entry points, deliberately:
+One product at a time, rendered by the platform:
 
 | | Android | iOS |
 |---|---|---|
-| **Product page** — "View in your space" | Scene Viewer | AR Quick Look |
-| **Catalogue** — "Place in your room" | in-page WebXR, several objects at once | not available |
+| "View in your space" | Google Scene Viewer | Apple AR Quick Look |
 
-The system viewers (Scene Viewer, Quick Look) show **one** model, full screen,
-with no control returned to the page. They are the only option on iOS and the
-simplest on Android, so the product page uses them on both. The multi-object
-place-and-lock experience needs WebXR and so remains Android-only, reached from
-the catalogue.
+Both are native ARCore/ARKit system viewers, which is why they are used rather
+than drawing AR in the page: they bring real depth occlusion, live light
+estimation and proper contact shadows that an in-page WebXR scene cannot match
+on mid-range hardware. The trade is that they show one model at a time, full
+screen, with no control returned to the page — which suits a product preview.
 
-**Stored models must be at real-world scale.** Both system viewers read glTF as
-1 unit = 1 metre and accept no scale parameter — they only get a file URL. So
-`src/bake.ts` bakes scale and grounding into the GLB at upload time and the
-product record carries `scale: 1`. A model stored at author scale renders fine
-in the in-page scene and arrives absurdly sized in AR.
+**Stored models must be at real-world scale.** Both viewers read glTF as
+1 unit = 1 metre and accept no scale parameter — they receive only a file URL.
+`src/bake.ts` bakes scale and grounding into the GLB at upload, so records
+carry `scale: 1`. A model stored at author scale looks fine in the turntable
+preview and arrives absurdly sized in AR: one of these bottles was 47 metres.
 
-There is no browser workaround on iOS: every iOS browser is required to use
-WebKit. So the two platforms get different experiences, and the UI says so
-rather than pretending otherwise:
-
-- **Android** runs the in-page WebXR scene — place several products, adjust
-  them, lock them, leave them in the room together.
-- **iOS** hands off to Apple's AR Quick Look from the product page. Quick Look
-  is a full-screen system viewer showing **one** model; it cannot place several
-  products together, and the page gets no control or feedback while it is open.
-
-`src/usdz.ts` generates the USDZ that Quick Look needs in the browser, from the
-GLB already being served, so there is one asset per product rather than two.
-This mirrors what `<model-viewer>` does for its `quick-look` AR mode when no
-`ios-src` is supplied. Output verified with `usdchecker --arkit`.
-
-`public/ios-spike.html` is an older marker-tracking experiment (MindAR).
+iOS gets its USDZ generated in the browser from the same GLB (`src/usdz.ts`),
+so there is one asset per product. Output verified with `usdchecker --arkit`.
 
 ### Per-device AR features
 
