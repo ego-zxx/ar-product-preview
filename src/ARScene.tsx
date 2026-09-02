@@ -44,9 +44,6 @@ export type Placed = {
 }
 export type Draft = { product: Product }
 
-/** Reference ARCore app caps at 20 to avoid overloading tracking + renderer. */
-export const MAX_OBJECTS = 20
-
 /**
  * How far from the tap ray an object can sit and still be selected, in metres.
  * Requiring a direct hit on a small product is unusable on a handheld phone.
@@ -321,13 +318,15 @@ function FixedPlacement({
 }
 
 export function Placement({
-  objects, draft, selectedId, commitRef, gestureRef, uiHidden,
+  objects, draft, selectedId, commitRef, gestureRef, resumeRef, uiHidden,
   onCommit, onTap, onSurface, onError,
 }: {
   objects: Placed[]
   draft: Draft | null
   selectedId: number | null
   commitRef: React.RefObject<(() => void) | null>
+  /** filled with a function that reopens a placed object for editing */
+  resumeRef: React.RefObject<((id: number) => boolean) | null>
   gestureRef: React.RefObject<Gesture>
   /** clean view: no reticle either, the room should be uncluttered */
   uiHidden: boolean
@@ -461,7 +460,11 @@ export function Placement({
     }
 
     const reticle = reticleRef.current
-    if (reticle) reticle.visible = hasHit.current && !draft && !uiHidden
+    // Once something is placed there is nothing left to aim at, so the reticle
+    // only shows while the scene is still empty.
+    if (reticle) {
+      reticle.visible = hasHit.current && !draft && !uiHidden && objects.length === 0
+    }
     if (reticle?.visible) reticle.position.copy(hitPos)
 
     // --- gestures on the live draft ---
@@ -551,6 +554,32 @@ export function Placement({
       commitRef.current = null
     }
   }, [commitRef])
+
+  /**
+   * Adopt a placed object's live pose as the draft, so unlocking it to move
+   * does not make it jump back to the reticle. The pose is read here because
+   * an anchored object's position only exists in the scene graph, not in the
+   * record App holds.
+   */
+  useEffect(() => {
+    resumeRef.current = (id: number) => {
+      const node = placedRefs.get(id)
+      const record = objects.find((o) => o.id === id)
+      if (!node || !record) return false
+      node.getWorldPosition(draftPos)
+      goal.copy(draftPos)
+      draftYaw.current = goalYaw.current = record.yaw
+      dampX.reset()
+      dampY.reset()
+      dampZ.reset()
+      dampYaw.reset()
+      lastMode.current = 'none'
+      return true
+    }
+    return () => {
+      resumeRef.current = null
+    }
+  }, [resumeRef, objects, placedRefs, draftPos, goal, dampX, dampY, dampZ, dampYaw])
 
   useXRInputSourceEvent(
     'all',

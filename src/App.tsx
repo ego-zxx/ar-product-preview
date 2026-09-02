@@ -3,7 +3,7 @@ import { Canvas } from '@react-three/fiber'
 import { Matrix4, NeutralToneMapping } from 'three'
 import { XR, XRDomOverlay, createXRStore, useXR } from '@react-three/xr'
 import {
-  DepthOcclusion, Env, EstimatedLighting, KeyLight, MAX_OBJECTS, PlaneOcclusion, Placement,
+  DepthOcclusion, Env, EstimatedLighting, KeyLight, PlaneOcclusion, Placement,
   newGesture, type Draft, type Gesture, type Placed,
 } from './ARScene'
 import { useAccess } from './access'
@@ -58,7 +58,6 @@ export function App() {
   const [objects, setObjects] = useState<Placed[]>([])
   const [draft, setDraft] = useState<Draft | null>(null)
   const [selectedId, setSelectedId] = useState<number | null>(null)
-  const [confirmClear, setConfirmClear] = useState(false)
   const [hasSurface, setHasSurface] = useState(false)
   // real room lighting has taken over from the static rig
   const [litByRoom, setLitByRoom] = useState(false)
@@ -67,6 +66,7 @@ export function App() {
   const uiHiddenRef = useRef(false)
   uiHiddenRef.current = uiHidden
   const commitRef = useRef<(() => void) | null>(null)
+  const resumeRef = useRef<((id: number) => boolean) | null>(null)
   const gestureRef = useRef<Gesture>(newGesture())
   const pointers = useRef(new Map<number, { x: number; y: number }>()).current
   const [products, setProducts] = useState<Product[]>([])
@@ -119,7 +119,7 @@ export function App() {
       }
       setSelectedId(null)
       // Placement stored the pose; App only tracks which product is in flight.
-      if (!draft && selected && objects.length < MAX_OBJECTS) setDraft({ product: selected })
+      if (!draft && selected && objects.length === 0) setDraft({ product: selected })
     },
     [draft, selected, objects.length],
   )
@@ -168,7 +168,6 @@ export function App() {
           setObjects([])
           setDraft(null)
           setSelectedId(null)
-          setConfirmClear(false)
           setHasSurface(false)
           setUiHidden(false)
         }
@@ -400,6 +399,7 @@ export function App() {
             commitRef={commitRef}
             onCommit={onCommit}
             gestureRef={gestureRef}
+            resumeRef={resumeRef}
             uiHidden={uiHidden}
             onTap={onTap}
             onSurface={setHasSurface}
@@ -461,14 +461,14 @@ export function App() {
                       ? 'Selected'
                       : objects.length === 0
                         ? `Tap a surface to place ${selected?.name ?? ''}`
-                        : `${objects.length} placed · tap one to adjust`}
+                        : 'Tap it to move or remove'}
               </span>
             </div>
 
             {error && <div className="err">{error}</div>}
 
             <div className="ar-bottom">
-              {draft && !confirmClear && (
+              {draft && (
                 <div className="ar-actions">
                   <button className="pill" onPointerDown={muteSelect} onClick={() => setDraft(null)}>
                     Cancel
@@ -478,32 +478,24 @@ export function App() {
                   </button>
                 </div>
               )}
-              {confirmClear && (
-                <div role="alertdialog" aria-label="Remove everything?">
-                  <div className="ar-prompt">Remove all {objects.length} items?</div>
-                  <div className="ar-actions">
-                  <button className="pill" onPointerDown={muteSelect} onClick={() => setConfirmClear(false)}>
-                    Keep
-                  </button>
+              {selectedId != null && (
+                <div className="ar-actions">
                   <button
                     className="pill"
-                    data-danger="true"
+                    data-primary="true"
                     onPointerDown={muteSelect}
                     onClick={() => {
-                      clear()
+                      // Unlock: hand the placed pose back to the draft so it can
+                      // be dragged and turned again, then locked afresh.
+                      const target = objects.find((o) => o.id === selectedId)
+                      if (target && resumeRef.current?.(selectedId)) {
+                        deleteObject(selectedId)
+                        setDraft({ product: target.product })
+                      }
                       setSelectedId(null)
-                      setConfirmClear(false)
                     }}
                   >
-                    Remove all
-                  </button>
-                  </div>
-                </div>
-              )}
-              {selectedId != null && !confirmClear && (
-                <div className="ar-actions">
-                  <button className="pill" onPointerDown={muteSelect} onClick={() => setSelectedId(null)}>
-                    Deselect
+                    Move
                   </button>
                   <button
                     className="pill"
@@ -518,40 +510,6 @@ export function App() {
                   </button>
                 </div>
               )}
-              <div className="tray">
-                <div className="tray-scroll">
-                  {products.map((p) => (
-                    <button
-                      key={p.id}
-                      className="tray-item"
-                      data-on={p.id === productId}
-                      onPointerDown={muteSelect}
-                      onClick={() => {
-                        setProductId(p.id)
-                        setDraft((d) => (d ? { ...d, product: p } : d))
-                      }}
-                    >
-                      <span className="tray-emoji">{p.emoji}</span>
-                      {p.name}
-                    </button>
-                  ))}
-                  {objects.length > 0 && (
-                    <button
-                      className="tray-item"
-                      style={{ color: 'var(--red)' }}
-                      aria-label={`Clear all ${objects.length} placed items`}
-                      onPointerDown={muteSelect}
-                      onClick={() => setConfirmClear(true)}
-                    >
-                      <svg className="tray-emoji" viewBox="0 0 256 256" aria-hidden="true"
-                        style={{ width: 25, height: 25, fill: 'currentColor', margin: '0 auto 3px' }}>
-                        <path d="M216 48h-40v-8a24 24 0 0 0-24-24h-48a24 24 0 0 0-24 24v8H40a8 8 0 0 0 0 16h8v144a16 16 0 0 0 16 16h128a16 16 0 0 0 16-16V64h8a8 8 0 0 0 0-16ZM96 40a8 8 0 0 1 8-8h48a8 8 0 0 1 8 8v8H96Zm96 168H64V64h128Zm-80-104v64a8 8 0 0 1-16 0v-64a8 8 0 0 1 16 0Zm48 0v64a8 8 0 0 1-16 0v-64a8 8 0 0 1 16 0Z" />
-                      </svg>
-                      Clear
-                    </button>
-                  )}
-                </div>
-              </div>
             </div>
             </>
             )}
