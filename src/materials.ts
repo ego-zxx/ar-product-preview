@@ -1,4 +1,4 @@
-import { MeshStandardMaterial, type Material } from 'three'
+import { Color, MeshStandardMaterial, type Material } from 'three'
 
 /**
  * Corrections applied to uploaded models, for the two faults that most often
@@ -72,3 +72,11 @@ export function improveMaterial(material: Material) {
   if (!m.isMeshStandardMaterial) return { metal: false, rough: false }
   return { metal: correctMetalness(m), rough: varyRoughness(m) }
 }
+
+/**
+ * Colour of the shadow the object casts on the real surface. A photographed
+ * shadow is never black: it is the surface lit by ambient alone, so it takes
+ * the ambient's colour. `EstimatedLighting` writes the room's ambient here;
+ * black until an estimate exists.
+ */
+export const shadowTint = new Color(0, 0, 0)

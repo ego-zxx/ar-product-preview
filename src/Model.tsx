@@ -1,10 +1,10 @@
 import { Suspense, useEffect, useRef } from 'react'
 import { useFrame, useLoader, useThree } from '@react-three/fiber'
 import {
-  Box3, CanvasTexture, DoubleSide, Group, Mesh, Object3D, SRGBColorSpace, Texture, Vector2, Vector3,
+  Box3, CanvasTexture, DoubleSide, Group, Mesh, Object3D, ShadowMaterial, SRGBColorSpace, Texture, Vector2, Vector3,
 } from 'three'
 import { grainUniforms, patchForGrain, stepGrain, VIGNETTE_AR } from './grain'
-import { improveMaterial } from './materials'
+import { improveMaterial, shadowTint } from './materials'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { CoffeeCup, Faucet } from './models'
 import type { Product } from './products'
@@ -61,10 +61,12 @@ function ContactShade({ radius }: { radius: number }) {
  * object's own silhouette, which grounds it far better than a painted blob.
  */
 function ShadowCatcher({ size = 0.6 }: { size?: number }) {
+  const material = useRef<ShadowMaterial>(null)
+  useFrame(() => material.current?.color.copy(shadowTint))
   return (
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.0012, 0]} receiveShadow>
       <planeGeometry args={[size, size]} />
-      <shadowMaterial transparent opacity={0.4} depthWrite={false} side={DoubleSide} />
+      <shadowMaterial ref={material} transparent opacity={0.4} depthWrite={false} side={DoubleSide} />
     </mesh>
   )
 }
@@ -82,6 +84,7 @@ function GltfModel({ url, scale, grounded }: { url: string; scale: number; groun
     const size = state.gl.getDrawingBufferSize(bufferSize.current)
     stepGrain(state.clock.elapsedTime * 60, size.x, size.y)
     grainUniforms.uVignette.value = grounded ? VIGNETTE_AR : 0
+    grainUniforms.uPlate.value = grounded ? 1 : 0
   })
   if (!holder.current) {
     const root = gltf.scene.clone(true)

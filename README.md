@@ -196,8 +196,13 @@ reading its source rather than guessing:
 - **Shadows** are the object's real silhouette from that light, caught by a
   transparent `ShadowMaterial` plane under the object, with a soft edge (indoor
   light is diffuse). Map size is the quality/performance knob.
-- **Camera matching** (`src/grain.ts`, AR only): sensor grain and a lens
-  vignette so the object carries the feed's imperfections, not just its light.
+- **Camera matching** (`src/grain.ts`, AR only): sensor grain, a lens
+  vignette and a plate response (lifted blacks, rolled-off whites, saturation
+  falling away at both ends) so the object carries the feed's character, not
+  just its light. This is the compositor's black-point/white-point match; a
+  render's pure blacks and clean whites are a tell even under matched light.
+- **Shadow colour** follows the room's ambient (SH band 0 → `shadowTint`), as
+  a photographed shadow is the surface lit by ambient alone, never black.
   Klein & Murray (ISMAR 2008) found the camera's artefacts, not the lighting,
   are the biggest remaining tell once lighting is right; the two done here are
   the ones that work per material, without a screen-space pass. Their top

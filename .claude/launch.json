@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "api",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["server/server.mjs"],
+      "port": 8788
+    },
+    {
+      "name": "web",
+      "runtimeExecutable": "env",
+      "runtimeArgs": ["NO_SSL=1", "VITE_OPEN_ACCESS=1", "npx", "vite", "--host", "--port", "5174"],
+      "port": 5174
+    }
+  ]
+}

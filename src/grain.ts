@@ -22,7 +22,21 @@ export const grainUniforms = {
   uLensRes: { value: [1, 1] as [number, number] },
   // corner darkening; 0 outside AR, where there is no camera to match
   uVignette: { value: 0 },
+  // 1 in AR: shape the object's tones like the camera's ISP shapes the feed
+  uPlate: { value: 0 },
 }
+
+/**
+ * Plate response. Compositors match a CG element to footage by lifting its
+ * blacks to the plate's black point, rolling its highlights off (a "white" in
+ * footage measures well under 1.0) and letting saturation fall away at both
+ * ends, as sensors and film do. A render has none of that: its blacks are
+ * deeper and its whites cleaner than anything in the feed, which is a tell
+ * even when the lighting matches.
+ *
+ * ponytail: fixed curve, not sampled from the feed. Lift 0.03, white → 0.89.
+ */
+export const PLATE_LIFT = 0.03
 
 export const VIGNETTE_AR = 0.15
 
@@ -49,12 +63,20 @@ export function patchForGrain(material: Material) {
         uniform float uGrainTime;
         uniform float uGrainAmount;
         uniform vec2 uLensRes;
-        uniform float uVignette;`,
+        uniform float uVignette;
+        uniform float uPlate;`,
       )
       .replace(
         '#include <dithering_fragment>',
         `#include <dithering_fragment>
         {
+          // plate response, see PLATE_LIFT
+          vec3 c = gl_FragColor.rgb;
+          c = 0.03 + c * 0.97;
+          c = c / (1.0 + 0.5 * max(c - 0.75, 0.0));
+          float l = dot(c, vec3(0.299, 0.587, 0.114));
+          float keep = 1.0 - 0.2 * (smoothstep(0.6, 1.0, l) + smoothstep(0.15, 0.0, l));
+          gl_FragColor.rgb = mix(gl_FragColor.rgb, mix(vec3(l), c, keep), uPlate);
           // lens falloff: distance from frame centre, 0 at centre, ~1.41 at a corner
           float r = distance(gl_FragCoord.xy / uLensRes, vec2(0.5)) * 2.0;
           gl_FragColor.rgb *= 1.0 - uVignette * smoothstep(0.5, 1.4142, r);

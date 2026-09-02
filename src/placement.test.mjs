@@ -469,3 +469,31 @@ console.log('patch idempotence ok')
 }
 
 console.log('lens vignette ok')
+
+// grain.ts plate response: blacks lifted to the feed's black point, whites
+// rolled under 1.0, mid-tones and hue left alone, monotonic throughout.
+{
+  const plate = ([r, g, b]) => {
+    let c = [r, g, b].map((v) => 0.03 + v * 0.97)
+    c = c.map((v) => v / (1 + 0.5 * Math.max(v - 0.75, 0)))
+    const l = 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]
+    const ss = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t) }
+    const keep = 1 - 0.2 * (ss(0.6, 1.0, l) + ss(0.15, 0.0, l))
+    return c.map((v) => l + (v - l) * keep)
+  }
+  const black = plate([0, 0, 0]), white = plate([1, 1, 1]), grey = plate([0.4, 0.4, 0.4])
+  assert.ok(black[0] > 0.02 && black[0] < 0.05, `black is lifted, not crushed: ${black[0]}`)
+  assert.ok(white[0] > 0.85 && white[0] < 0.95, `white is rolled off, not clean: ${white[0]}`)
+  assert.ok(Math.abs(grey[0] - 0.4) < 0.03, `mid grey barely moves: ${grey[0]}`)
+  let last = -1
+  for (let v = 0; v <= 1.0001; v += 0.02) {
+    const out = plate([v, v, v])[0]
+    assert.ok(out > last, 'tone curve is monotonic')
+    last = out
+  }
+  const red = plate([0.5, 0.1, 0.1]), hot = plate([1, 0.6, 0.6])
+  assert.ok(red[0] - red[1] > 0.3, 'mid-tone colour keeps its saturation')
+  assert.ok(hot[0] - hot[1] < 0.4 * 0.9, 'highlight colour loses some saturation')
+}
+
+console.log('plate response ok')

@@ -14,6 +14,7 @@ import { Damper } from './damper'
 import { CoffeeCup, Faucet } from './models'
 import type { Product } from './products'
 import { Model, groundingOffset } from './Model'
+import { shadowTint } from './materials'
 import { occlusionStatus, patchForOcclusion, updateOcclusion } from './occlusion'
 
 const UP = new Vector3(0, 1, 0)
@@ -154,6 +155,15 @@ export function DiagnosticsProbe({ lit, onSample }: { lit: boolean; onSample: (d
 
 export function EstimatedLighting({ onActive }: { onActive: (on: boolean) => void }) {
   const { gl, scene } = useThree()
+  const active = useRef<XREstimatedLight | null>(null)
+  // the shadow takes the ambient's colour: SH band 0 is the average radiance
+  useFrame(() => {
+    const light = active.current
+    if (!light) return
+    const dc = light.lightProbe.sh.coefficients[0]
+    const peak = Math.max(dc.x, dc.y, dc.z)
+    if (peak > 0) shadowTint.setRGB(dc.x / peak, dc.y / peak, dc.z / peak).multiplyScalar(0.25)
+  })
   useEffect(() => {
     const xrLight = new XREstimatedLight(gl, true)
     // XREstimatedLight extends Group without setting .type, so it reports as
@@ -177,11 +187,14 @@ export function EstimatedLighting({ onActive }: { onActive: (on: boolean) => voi
     const start = () => {
       scene.add(xrLight)
       if (xrLight.environment) scene.environment = xrLight.environment
+      active.current = xrLight
       onActive(true)
     }
     const end = () => {
       scene.remove(xrLight)
       scene.environment = previousEnvironment
+      active.current = null
+      shadowTint.setRGB(0, 0, 0)
       onActive(false)
     }
     xrLight.addEventListener('estimationstart', start)
@@ -191,6 +204,8 @@ export function EstimatedLighting({ onActive }: { onActive: (on: boolean) => voi
       xrLight.removeEventListener('estimationend', end)
       scene.remove(xrLight)
       scene.environment = previousEnvironment
+      active.current = null
+      shadowTint.setRGB(0, 0, 0)
       onActive(false)
     }
   }, [gl, scene, onActive])
