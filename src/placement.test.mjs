@@ -502,12 +502,14 @@ console.log('plate response ok')
 // so the render gets a trim from the room's measured brightness — bounded, and
 // never inverted (a brighter room must never raise exposure).
 {
-  const REFERENCE = 1.28, MIN = 0.78, MAX = 1
+  const REFERENCE = 0.35, MIN = 0.65, MAX = 1
   const exposureTrim = (a) => (a <= 0 ? 1 : Math.min(MAX, Math.max(MIN, REFERENCE / a)))
 
   assert.equal(exposureTrim(0), 1, 'no estimate yet means no trim')
   assert.equal(exposureTrim(REFERENCE), 1, 'a room at the reference level is left alone')
   assert.ok(exposureTrim(4) === MIN, 'a bright room is pulled down to the floor')
+  // measured on a real phone in a dim room, with the object still too bright
+  assert.ok(exposureTrim(0.43) < 1, 'the measured dim room now darkens the object')
   assert.ok(exposureTrim(0.2) === MAX, 'a dim room is left alone, never lifted')
   let last = Infinity
   for (let a = 0.05; a < 6; a += 0.05) {
@@ -517,8 +519,8 @@ console.log('plate response ok')
     last = e
   }
   // the burger case: an object reading brighter than the room it sits in
-  assert.ok(exposureTrim(2.5) < 1, 'a room measuring above the reference is pulled down')
-  assert.equal(exposureTrim(0.6), 1, 'the trim never brightens on a guessed reference')
+  assert.ok(exposureTrim(2.5) === MIN, 'a room well above the reference is pulled right down')
+  assert.ok(exposureTrim(0.2) === 1, 'the trim never brightens')
 }
 
 console.log('exposure matching ok')
@@ -527,13 +529,14 @@ console.log('exposure matching ok')
 // through whatever alpha we leave, so the feather must be a fixed pixel width
 // (not a fixed angle) and must never touch the interior of the object.
 {
-  const EDGE_ALPHA = 0.45
+  const EDGE_ALPHA = 0.65, BAND_MAX = 0.06
   const featherAt = (ndv, texel, pixels) => {
     if (pixels <= 0) return 1
-    const t = Math.min(1, Math.max(0, ndv / Math.max(texel * pixels, 1e-6)))
+    const band = Math.min(texel, BAND_MAX) * pixels
+    const t = Math.min(1, Math.max(0, ndv / Math.max(band, 1e-6)))
     return EDGE_ALPHA + (1 - EDGE_ALPHA) * t * t * (3 - 2 * t)
   }
-  const texel = 0.01, px = 1.8
+  const texel = 0.01, px = 1.4
   assert.equal(featherAt(1, texel, px), 1, 'a surface facing the camera stays opaque')
   assert.equal(featherAt(0.5, texel, px), 1, 'the interior is untouched')
   assert.equal(featherAt(0, texel, px), EDGE_ALPHA, 'the silhouette lets the room through')
@@ -542,8 +545,12 @@ console.log('exposure matching ok')
   // curvature must not change the width: a tight bevel and a flat panel both
   // get the same band, which is the whole point of measuring in pixels
   const tight = featherAt(0.004, 0.004, px)
-  const flat = featherAt(0.1, 0.1, px)
+  const flat = featherAt(0.04, 0.04, px)
   assert.ok(Math.abs(tight - flat) < 1e-9, 'feather width is curvature independent')
+
+  // a scanned model reports wild derivatives; without the clamp the band grows
+  // until the feather punches holes across the whole surface
+  assert.equal(featherAt(0.3, 5, px), 1, 'a noisy normal cannot feather the interior')
 
   let last = -1
   for (let n = 0; n <= 0.05; n += 0.001) {
@@ -559,17 +566,22 @@ console.log('silhouette feather ok')
 // halation.tsx bright pass: only highlights bleed, and the blur must conserve
 // energy or the glow changes brightness with radius.
 {
-  const THRESHOLD = 0.72, KNEE = 0.28
+  const THRESHOLD = 0.93, KNEE = 0.07
   const brightPass = (l) => {
     const s = Math.min(1, Math.max(0, (l - THRESHOLD) / KNEE))
     return l * s * s
   }
   assert.equal(brightPass(0.5), 0, 'mid-tones do not bleed')
   assert.equal(brightPass(THRESHOLD), 0, 'the threshold itself does not bleed')
-  assert.ok(brightPass(0.85) > 0, 'a highlight bleeds')
-  assert.ok(brightPass(1) > brightPass(0.85), 'brighter bleeds more')
-  // soft knee: no step at the threshold, or highlights would pop as they move
-  assert.ok(brightPass(THRESHOLD + 0.01) < 0.01, 'the knee is soft, not a step')
+  assert.ok(brightPass(0.85) === 0, 'a bright bun is not a light source and does not bleed')
+  assert.ok(brightPass(0.99) > 0, 'a blown highlight bleeds')
+  assert.ok(brightPass(1) > brightPass(0.96), 'brighter bleeds more')
+  // soft knee: no step at the threshold, or highlights would pop in and out as
+  // the phone moves. Stated relative to the knee so it holds if either is tuned.
+  assert.ok(
+    brightPass(THRESHOLD + KNEE * 0.1) < brightPass(1) * 0.05,
+    'the knee ramps in rather than stepping',
+  )
 
   const weights = [0.227027, 0.194595, 0.121622, 0.054054, 0.016216]
   const total = weights[0] + 2 * (weights[1] + weights[2] + weights[3] + weights[4])

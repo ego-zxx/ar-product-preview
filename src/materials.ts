@@ -77,6 +77,7 @@ export function improveMaterial(material: Material) {
  * Colour of the shadow the object casts on the real surface. A photographed
  * shadow is never black: it is the surface lit by ambient alone, so it takes
  * the ambient's colour. `EstimatedLighting` writes the room's ambient here;
- * black until an estimate exists.
+ * black until an estimate exists. Kept dark: at a quarter of the ambient the
+ * shadow was too pale to ground the object at all.
  */
 export const shadowTint = new Color(0, 0, 0)

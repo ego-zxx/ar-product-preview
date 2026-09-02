@@ -13,7 +13,7 @@ import {
 import { Damper } from './damper'
 import { CoffeeCup, Faucet } from './models'
 import type { Product } from './products'
-import { Model, groundingOffset } from './Model'
+import { Model, groundingOffset, objectBounds } from './Model'
 import { shadowTint } from './materials'
 import { halationStatus } from './halation'
 import { occlusionStatus, patchForOcclusion, updateOcclusion } from './occlusion'
@@ -108,6 +108,48 @@ export const faceCameraYaw = (dirX: number, dirZ: number) => Math.atan2(-dirX, -
  */
 export const roomLight = { ambient: 0 }
 
+/**
+ * Point the shadow at the object.
+ *
+ * The estimate gives a light *direction*, so three parks the directional light
+ * one metre from the session's origin — wherever the phone happened to start.
+ * Its shadow frustum was four metres across for a twelve-centimetre burger, so
+ * a 1024 map spent about four millimetres per texel and the shadow came out so
+ * faint and so smeared that the object read as floating with nothing under it.
+ * Re-anchoring the light on the object and fitting the frustum to it puts the
+ * whole map on the thing casting the shadow, which is what the shadowCameraAutomatic
+ * setting does in A-Frame's own light-estimation demo.
+ */
+const SHADOW_DISTANCE = 1.5
+const lightDir = new Vector3()
+
+export function fitShadow(light: DirectionalLight) {
+  if (objectBounds.radius <= 0) return
+  // three re-sets this to the bare estimate every frame, so re-anchor per
+  // frame. Taken as position minus target so it reads correctly whether the
+  // light carries a direction (the estimate) or a world position (the rig).
+  lightDir.subVectors(light.position, light.target.position)
+  if (lightDir.lengthSq() < 1e-8) lightDir.set(0, 1, 0)
+  lightDir.normalize()
+  light.position.copy(objectBounds.center).addScaledVector(lightDir, SHADOW_DISTANCE)
+  light.target.position.copy(objectBounds.center)
+  light.target.updateMatrixWorld()
+
+  // wide enough that the penumbra has room to fall outside the object, tight
+  // enough that the map is nearly all object
+  const extent = Math.max(objectBounds.radius * 3, 0.2)
+  const camera = light.shadow.camera
+  if (Math.abs(camera.right - extent) > 1e-4) {
+    camera.left = -extent
+    camera.right = extent
+    camera.top = extent
+    camera.bottom = -extent
+    camera.near = 0.05
+    camera.far = SHADOW_DISTANCE + extent * 2
+    camera.updateProjectionMatrix()
+  }
+}
+
 export type Diag = {
   fps: number
   lit: boolean
@@ -182,11 +224,13 @@ export function DiagnosticsProbe({ lit, onSample }: { lit: boolean; onSample: (d
  *
  * ponytail: the trim may only darken. The reported symptom is objects sitting
  * brighter than the room, and the estimate is not a light meter, so lifting on
- * a guessed reference could undo the fixes above. ?debug=1 now prints the room
- * level; raise EXPOSURE_MAX once there are real numbers from a dim room.
+ * a guessed reference could undo the fixes above. The reference is no longer
+ * the value that derivation gives (1.28) but one anchored to a measurement: a
+ * real dim room reported 0.43, with the object still reading too bright, so
+ * the reference sits below that and such a room now renders darker.
  */
-export const EXPOSURE_REFERENCE = 1.28
-export const EXPOSURE_MIN = 0.78
+export const EXPOSURE_REFERENCE = 0.35
+export const EXPOSURE_MIN = 0.65
 export const EXPOSURE_MAX = 1
 
 export const exposureTrim = (ambient: number) =>
@@ -206,8 +250,9 @@ export function EstimatedLighting({ onActive }: { onActive: (on: boolean) => voi
     if (!light) return
     const dc = light.lightProbe.sh.coefficients[0]
     const peak = Math.max(dc.x, dc.y, dc.z)
-    if (peak > 0) shadowTint.setRGB(dc.x / peak, dc.y / peak, dc.z / peak).multiplyScalar(0.25)
+    if (peak > 0) shadowTint.setRGB(dc.x / peak, dc.y / peak, dc.z / peak).multiplyScalar(0.14)
     roomLight.ambient = 0.2126 * dc.x + 0.7152 * dc.y + 0.0722 * dc.z
+    fitShadow(light.directionalLight)
     level.current = exposure.current.update(
       level.current,
       exposureTrim(roomLight.ambient),
@@ -225,13 +270,11 @@ export function EstimatedLighting({ onActive }: { onActive: (on: boolean) => voi
     xrLight.directionalLight.castShadow = true
     xrLight.directionalLight.shadow.mapSize.set(1024, 1024)
     // indoor light is diffuse; a crisp shadow edge is one of the loudest CG tells
-    xrLight.directionalLight.shadow.radius = 9
-    xrLight.directionalLight.shadow.camera.near = 0.1
+    xrLight.directionalLight.shadow.radius = 10
+    // the frustum is fitted to the object every frame below; these are only
+    // what it uses before anything is placed
+    xrLight.directionalLight.shadow.camera.near = 0.05
     xrLight.directionalLight.shadow.camera.far = 12
-    xrLight.directionalLight.shadow.camera.left = -2
-    xrLight.directionalLight.shadow.camera.right = 2
-    xrLight.directionalLight.shadow.camera.top = 2
-    xrLight.directionalLight.shadow.camera.bottom = -2
     xrLight.directionalLight.shadow.bias = -0.0004
     xrLight.directionalLight.shadow.normalBias = 0.02
 
@@ -318,10 +361,36 @@ export function Env() {
  */
 function PlaneOccluder({ plane }: { plane: XRPlane }) {
   const geometry = useXRPlaneGeometry(plane)
+  const mesh = useRef<Mesh>(null)
   const register = (m: Object3D | null) => {
+    mesh.current = m as Mesh | null
     if (m) surfaces.add(m)
     else surfaces.forEach((o) => !o.parent && surfaces.delete(o))
   }
+
+  /*
+   * A detected plane is a convex hull that overshoots the real surface, and it
+   * is rendered depth-only, so any plane crossing the placed object slices it
+   * clean in half — the burger cut along a straight line was a plane at duvet
+   * height passing through it. A surface cannot pass through a solid object in
+   * the first place, so a plane that intersects the object is a bad hull and
+   * must not occlude it. Planes genuinely in front of the object miss its
+   * sphere and go on occluding as before.
+   */
+  useFrame(() => {
+    const m = mesh.current
+    if (!m) return
+    if (objectBounds.radius <= 0) {
+      m.visible = true
+      return
+    }
+    // WebXR plane polygons lie in their space's X-Z, so +Y is the normal
+    normal.set(0, 1, 0).transformDirection(m.matrixWorld)
+    point.setFromMatrixPosition(m.matrixWorld)
+    const gap = Math.abs(normal.dot(offset.copy(objectBounds.center).sub(point)))
+    m.visible = gap > objectBounds.radius
+  })
+
   return (
     <XRSpace space={plane.planeSpace}>
       <mesh ref={register} geometry={geometry} renderOrder={-1}>
@@ -338,6 +407,10 @@ function PlaneOccluder({ plane }: { plane: XRPlane }) {
     </XRSpace>
   )
 }
+
+const normal = new Vector3()
+const point = new Vector3()
+const offset = new Vector3()
 
 export function PlaneOcclusion() {
   const planes = useXRPlanes()
@@ -408,6 +481,8 @@ export function KeyLight() {
     l.target.position.set(camera.position.x, 0, camera.position.z)
     l.position.set(camera.position.x + 0.4, camera.position.y + 3.5, camera.position.z + 0.7)
     l.target.updateMatrixWorld()
+    // same fit as the estimated light, so the fallback grounds the object too
+    fitShadow(l)
   })
   return (
     <directionalLight
@@ -418,11 +493,7 @@ export function KeyLight() {
       shadow-radius={9}
       shadow-bias={-0.0004}
       shadow-normalBias={0.02}
-      shadow-camera-left={-2}
-      shadow-camera-right={2}
-      shadow-camera-top={2}
-      shadow-camera-bottom={-2}
-      shadow-camera-near={0.1}
+      shadow-camera-near={0.05}
       shadow-camera-far={12}
     />
   )

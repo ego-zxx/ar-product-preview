@@ -66,16 +66,24 @@ function ShadowCatcher({ size = 0.6 }: { size?: number }) {
   return (
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.0012, 0]} receiveShadow>
       <planeGeometry args={[size, size]} />
-      <shadowMaterial ref={material} transparent opacity={0.4} depthWrite={false} side={DoubleSide} />
+      <shadowMaterial ref={material} transparent opacity={0.55} depthWrite={false} side={DoubleSide} />
     </mesh>
   )
 }
+
+/**
+ * World-space bounding sphere of the model on show, so the occluders can tell
+ * whether a detected plane passes through it. Radius 0 means nothing placed.
+ */
+export const objectBounds = { center: new Vector3(), radius: 0 }
 
 function GltfModel({ url, scale, grounded }: { url: string; scale: number; grounded: boolean }) {
   const gltf = useLoader(GLTFLoader, url)
   const maxAnisotropy = useThree((s) => s.gl.capabilities.getMaxAnisotropy())
   const holder = useRef<Object3D | null>(null)
   const footprint = useRef(0.05)
+  // local-space sphere, measured once; tracked into world space each frame
+  const sphere = useRef({ center: new Vector3(), radius: 0 })
   // advance the grain here so it animates wherever a model is shown, in AR and
   // on the product page alike. In XR three resizes the drawing buffer to the
   // XR framebuffer, so this is the size the vignette must be centred on.
@@ -83,6 +91,18 @@ function GltfModel({ url, scale, grounded }: { url: string; scale: number; groun
   useFrame((state) => {
     const size = state.gl.getDrawingBufferSize(bufferSize.current)
     stepGrain(state.clock.elapsedTime * 60, size.x, size.y)
+    if (grounded && holder.current) {
+      const m = holder.current.matrixWorld
+      objectBounds.center.copy(sphere.current.center).applyMatrix4(m)
+      // largest axis scale, so a non-uniform scale still covers the model
+      objectBounds.radius =
+        sphere.current.radius *
+        Math.max(
+          Math.hypot(m.elements[0], m.elements[1], m.elements[2]),
+          Math.hypot(m.elements[4], m.elements[5], m.elements[6]),
+          Math.hypot(m.elements[8], m.elements[9], m.elements[10]),
+        )
+    }
     grainUniforms.uVignette.value = grounded ? VIGNETTE_AR : 0
     grainUniforms.uPlate.value = grounded ? 1 : 0
     grainUniforms.uEdgeFeather.value = grounded ? EDGE_FEATHER_AR : 0
@@ -116,6 +136,8 @@ function GltfModel({ url, scale, grounded }: { url: string; scale: number; groun
       root.position.set(o.x, o.y, o.z)
       // footprint, so the contact shade matches this object rather than a guess
       footprint.current = Math.max(box.max.x - box.min.x, box.max.z - box.min.z) * 0.5
+      box.getCenter(sphere.current.center).add(o)
+      sphere.current.radius = box.min.distanceTo(box.max) * 0.5
     }
     const g = new Group()
     g.add(root)
@@ -142,6 +164,9 @@ export function Model({ product, grounded = true }: { product: Product; grounded
     ref.current?.traverse((o) => {
       if ((o as Mesh).isMesh) o.castShadow = true
     })
+    return () => {
+      objectBounds.radius = 0
+    }
   }, [product.id])
   return (
     <group ref={ref}>

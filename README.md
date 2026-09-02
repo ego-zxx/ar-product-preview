@@ -194,8 +194,12 @@ reading its source rather than guessing:
   ambient and an HDR reflection cube map, which is the split ARCore's own
   guidance prescribes. `KeyLight` is the fallback while no estimate exists.
 - **Shadows** are the object's real silhouette from that light, caught by a
-  transparent `ShadowMaterial` plane under the object, with a soft edge (indoor
-  light is diffuse). Map size is the quality/performance knob.
+  transparent `ShadowMaterial` plane under the object. The estimate reports a
+  light *direction*, so three parks the light near the session's origin and its
+  frustum covered four metres for a twelve-centimetre product — a shadow too
+  faint and too smeared to ground anything. `fitShadow` re-anchors the light on
+  the object and fits the frustum to it each frame, so the whole map is spent
+  on the caster. Map size is the quality/performance knob.
 - **Camera matching** (`src/grain.ts`, AR only): sensor grain, a lens
   vignette and a plate response (lifted blacks, rolled-off whites, saturation
   falling away at both ends) so the object carries the feed's character, not
@@ -212,6 +216,11 @@ reading its source rather than guessing:
   `?debug=1` prints the room level and the trim; `EXPOSURE_REFERENCE` is the knob.
   Klein & Murray (ISMAR 2008) found the camera's artefacts, not the lighting,
   are the biggest remaining tell once lighting is right.
+- **Occluders never cut the object.** A detected plane is a convex hull that
+  overshoots the real surface, and it renders depth-only, so a plane crossing
+  the product sliced it along a straight line. A real surface cannot pass
+  through a solid object, so a plane intersecting the object's bounding sphere
+  is a bad hull and stops occluding; planes genuinely in front still occlude.
 - **Light wrap and edge softness** are done by the XR compositor rather than
   by us. The camera feed is never ours to sample, but the session composites it
   behind our layer in alpha-blend mode, so feathering alpha across the outermost

@@ -44,14 +44,22 @@ export const grainUniforms = {
  * the surface curvature — a geometric falloff alone would feather a flat panel
  * across half its face and a tight bevel not at all.
  */
-export const EDGE_FEATHER_AR = 1.8
+export const EDGE_FEATHER_AR = 1.4
 /** How much of the real background shows through at the silhouette. */
-export const EDGE_ALPHA = 0.45
+export const EDGE_ALPHA = 0.65
+/**
+ * Ceiling on the measured band width. A scanned model's normals swing wildly
+ * between neighbouring pixels, so an unclamped fwidth reports a wide band deep
+ * inside the surface and the feather punches holes across the whole object —
+ * which is what the speckled rim on the burger was.
+ */
+export const EDGE_BAND_MAX = 0.06
 
 /** Mirror of the shader, for the test: 1 at the centre, EDGE_ALPHA at the rim. */
 export const featherAt = (ndv: number, texelWidth: number, pixels: number) => {
   if (pixels <= 0) return 1
-  const t = Math.min(1, Math.max(0, ndv / Math.max(texelWidth * pixels, 1e-6)))
+  const band = Math.min(texelWidth, EDGE_BAND_MAX) * pixels
+  const t = Math.min(1, Math.max(0, ndv / Math.max(band, 1e-6)))
   return EDGE_ALPHA + (1 - EDGE_ALPHA) * t * t * (3 - 2 * t)
 }
 
@@ -79,10 +87,14 @@ const patched = new WeakSet<Material>()
 
 const FEATHER = `
         {
-          // distance from the silhouette, where the surface turns away from us
-          float ndv = abs(dot(normalize(normal), normalize(vViewPosition)));
-          // fwidth converts that to screen pixels, so the band is a fixed width
-          float band = fwidth(ndv) * uEdgeFeather;
+          // the geometry's own normal, not the normal-mapped one: a scanned
+          // surface's perturbed normals are noise at this scale and would
+          // scatter the feather across the whole model instead of its rim
+          float ndv = abs(dot(normalize(nonPerturbedNormal), normalize(vViewPosition)));
+          // fwidth converts that to screen pixels, so the band is a fixed
+          // width; the clamp stops a faceted or noisy surface reporting a band
+          // wide enough to eat into the object
+          float band = min(fwidth(ndv), ${EDGE_BAND_MAX.toFixed(2)}) * uEdgeFeather;
           float edge = smoothstep(0.0, max(band, 1e-6), ndv);
           gl_FragColor.a *= mix(1.0, mix(${EDGE_ALPHA.toFixed(2)}, 1.0, edge), step(0.001, uEdgeFeather));
         }`

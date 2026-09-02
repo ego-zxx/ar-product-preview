@@ -43,11 +43,16 @@ export const halationStatus = { on: false }
 
 /** Bright pass resolution, as a fraction of the session's framebuffer. */
 const SCALE = 0.25
-/** Only highlights above this bleed. Display-referred, so 1.0 is clipping white. */
-const THRESHOLD = 0.72
+/**
+ * Only highlights above this bleed. Display-referred, so 1.0 is clipping white.
+ * Set high on purpose: a lit product is not a light source, and at 0.72 the
+ * whole of a bright bun qualified, wrapping the model in a golden halo that
+ * read as a dirty edge rather than as halation.
+ */
+const THRESHOLD = 0.93
 /** Softness of that threshold, so a highlight fades in rather than switching on. */
-const KNEE = 0.28
-const STRENGTH = 0.5
+const KNEE = 0.07
+const STRENGTH = 0.22
 /** Below this the effect disables itself for the rest of the session. */
 const MIN_FPS = 22
 
