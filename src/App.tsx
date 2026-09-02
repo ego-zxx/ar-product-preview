@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas } from '@react-three/fiber'
-import { Matrix4 } from 'three'
+import { Matrix4, NeutralToneMapping } from 'three'
 import { XR, XRDomOverlay, createXRStore, useXR } from '@react-three/xr'
 import {
-  DepthOcclusion, Env, KeyLight, MAX_OBJECTS, PlaneOcclusion, Placement,
+  DepthOcclusion, Env, EstimatedLighting, KeyLight, MAX_OBJECTS, PlaneOcclusion, Placement,
   newGesture, type Draft, type Gesture, type Placed,
 } from './ARScene'
 import { useAccess } from './access'
@@ -25,6 +25,7 @@ const store = createXRStore({
       'hit-test',
       'anchors',
       'plane-detection',
+      'light-estimation',
       'depth-sensing',
       'dom-overlay',
     ],
@@ -59,6 +60,8 @@ export function App() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [confirmClear, setConfirmClear] = useState(false)
   const [hasSurface, setHasSurface] = useState(false)
+  // real room lighting has taken over from the static rig
+  const [litByRoom, setLitByRoom] = useState(false)
   const [uiHidden, setUiHidden] = useState(false)
   const [route, setRoute] = useState(() => location.hash)
   const uiHiddenRef = useRef(false)
@@ -366,14 +369,30 @@ export function App() {
           canvas swallows every tap on the page. */}
       <Canvas
         shadows="percentage"
+        // Neutral tone mapping rather than ACES: ACES crushes contrast and
+        // desaturates, which makes a virtual object read as pasted onto the
+        // camera feed. Neutral (Khronos PBR) preserves colour, so the product
+        // sits in the frame instead of on it. toneMappingExposure is the knob
+        // if objects look consistently darker or brighter than the room.
+        gl={{
+          toneMapping: NeutralToneMapping,
+          toneMappingExposure: 1,
+          antialias: true,
+        }}
         style={{ position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none' }}
       >
         <XR store={store}>
           <Env />
           <PlaneOcclusion />
           <DepthOcclusion />
-          <ambientLight intensity={0.4} />
-          <KeyLight />
+          <EstimatedLighting onActive={setLitByRoom} />
+          {/* static rig only until the room's own lighting is available */}
+          {!litByRoom && (
+            <>
+              <ambientLight intensity={0.4} />
+              <KeyLight />
+            </>
+          )}
           <Placement
             objects={objects}
             draft={draft}

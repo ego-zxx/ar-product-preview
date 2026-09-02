@@ -6,6 +6,7 @@ import {
 } from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
+import { XREstimatedLight } from 'three/addons/webxr/XREstimatedLight.js'
 import {
   XRSpace, useXR, useXRHitTest, useXRInputSourceEvent, useXRPlaneGeometry, useXRPlanes,
 } from '@react-three/xr'
@@ -85,6 +86,61 @@ export const angleDelta = (a: number, b: number) => Math.atan2(Math.sin(b - a), 
  * front greets you rather than whichever side the hit pose happened to give.
  */
 export const faceCameraYaw = (dirX: number, dirZ: number) => Math.atan2(-dirX, -dirZ)
+
+/**
+ * Lights the model from the room it is actually standing in.
+ *
+ * ARCore's light estimate gives three things, and all three matter:
+ *  - spherical harmonics -> ambient colour and intensity, so a warm room makes
+ *    a warm object
+ *  - a primary light direction -> the shadow falls where the real shadows fall,
+ *    which is the single strongest cue that something is really there
+ *  - a live reflection cube map -> chrome and glass reflect the real room
+ *    rather than a canned studio
+ *
+ * Falls back silently to the static rig when a runtime declines it. three's
+ * XREstimatedLight is used rather than a hand-rolled probe: it handles the
+ * cube map format negotiation and the frame plumbing correctly.
+ */
+export function EstimatedLighting({ onActive }: { onActive: (on: boolean) => void }) {
+  const { gl, scene } = useThree()
+  useEffect(() => {
+    const xrLight = new XREstimatedLight(gl, true)
+    // shadows should come from the estimated key light, not a fixed one
+    xrLight.directionalLight.castShadow = true
+    xrLight.directionalLight.shadow.mapSize.set(1024, 1024)
+    xrLight.directionalLight.shadow.camera.near = 0.1
+    xrLight.directionalLight.shadow.camera.far = 12
+    xrLight.directionalLight.shadow.camera.left = -2
+    xrLight.directionalLight.shadow.camera.right = 2
+    xrLight.directionalLight.shadow.camera.top = 2
+    xrLight.directionalLight.shadow.camera.bottom = -2
+    xrLight.directionalLight.shadow.bias = -0.0004
+    xrLight.directionalLight.shadow.normalBias = 0.02
+
+    const previousEnvironment = scene.environment
+    const start = () => {
+      scene.add(xrLight)
+      if (xrLight.environment) scene.environment = xrLight.environment
+      onActive(true)
+    }
+    const end = () => {
+      scene.remove(xrLight)
+      scene.environment = previousEnvironment
+      onActive(false)
+    }
+    xrLight.addEventListener('estimationstart', start)
+    xrLight.addEventListener('estimationend', end)
+    return () => {
+      xrLight.removeEventListener('estimationstart', start)
+      xrLight.removeEventListener('estimationend', end)
+      scene.remove(xrLight)
+      scene.environment = previousEnvironment
+      onActive(false)
+    }
+  }, [gl, scene, onActive])
+  return null
+}
 
 export function Env() {
   const { gl, scene } = useThree()
