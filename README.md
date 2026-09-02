@@ -154,6 +154,16 @@ points the app at the API. It is the API's **origin only** — the client adds
 also means QR codes scan with no warning (unlike the self-signed LAN setup).
 Set the admin panel's "Link the QR points to" field to your Vercel URL.
 
+**Commit author must be the Vercel-connected GitHub user.** On the Hobby plan
+with a private repo, Vercel blocks any deployment whose commit author is a
+different GitHub identity (`readyState: BLOCKED`; the CLI shows it as
+`UNKNOWN`). This repo's local git config authors commits as `ego-zxx` via
+GitHub's noreply address for that reason. If you clone elsewhere, set the same
+`user.name`/`user.email` or pushes will silently not deploy.
+
+The CLI path also works: `npx vercel deploy --prod`. `.vercelignore` keeps the
+upload small — without it the CLI ships `node_modules`.
+
 ## Interaction and realism
 
 Placement mechanics follow what Google's `<model-viewer>` does in AR, after
