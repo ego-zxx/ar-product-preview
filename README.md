@@ -36,10 +36,24 @@ not, so it needs HTTPS.
 
 ## Platform support
 
-| | Android Chrome | iOS Safari |
+Two entry points, deliberately:
+
+| | Android | iOS |
 |---|---|---|
-| WebXR AR (in-page, multi-object) | yes | **no** — Apple ships no `immersive-ar` |
-| AR Quick Look (system viewer, one model) | — | yes |
+| **Product page** — "View in your space" | Scene Viewer | AR Quick Look |
+| **Catalogue** — "Place in your room" | in-page WebXR, several objects at once | not available |
+
+The system viewers (Scene Viewer, Quick Look) show **one** model, full screen,
+with no control returned to the page. They are the only option on iOS and the
+simplest on Android, so the product page uses them on both. The multi-object
+place-and-lock experience needs WebXR and so remains Android-only, reached from
+the catalogue.
+
+**Stored models must be at real-world scale.** Both system viewers read glTF as
+1 unit = 1 metre and accept no scale parameter — they only get a file URL. So
+`src/bake.ts` bakes scale and grounding into the GLB at upload time and the
+product record carries `scale: 1`. A model stored at author scale renders fine
+in the in-page scene and arrives absurdly sized in AR.
 
 There is no browser workaround on iOS: every iOS browser is required to use
 WebKit. So the two platforms get different experiences, and the UI says so
