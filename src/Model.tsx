@@ -69,7 +69,7 @@ function ShadowCatcher({ size = 0.6 }: { size?: number }) {
   )
 }
 
-function GltfModel({ url, scale }: { url: string; scale: number }) {
+function GltfModel({ url, scale, grounded }: { url: string; scale: number; grounded: boolean }) {
   const gltf = useLoader(GLTFLoader, url)
   const maxAnisotropy = useThree((s) => s.gl.capabilities.getMaxAnisotropy())
   const holder = useRef<Object3D | null>(null)
@@ -114,12 +114,19 @@ function GltfModel({ url, scale }: { url: string; scale: number }) {
   return (
     <>
       <primitive object={holder.current} scale={scale} />
-      <ContactShade radius={footprint.current * scale} />
+      {grounded && <ContactShade radius={footprint.current * scale} />}
     </>
   )
 }
 
-export function Model({ product }: { product: Product }) {
+/**
+ * `grounded` marks that the model is standing on a real surface, i.e. in AR.
+ * The contact darkening and shadow catcher are cues about meeting a floor, so
+ * in the product page's studio void they have nothing to describe — the
+ * contact disc in particular is simply a dark circle that becomes visible as
+ * the model turns.
+ */
+export function Model({ product, grounded = true }: { product: Product; grounded?: boolean }) {
   const ref = useRef<Group>(null)
   useEffect(() => {
     ref.current?.traverse((o) => {
@@ -128,14 +135,14 @@ export function Model({ product }: { product: Product }) {
   }, [product.id])
   return (
     <group ref={ref}>
-      <ShadowCatcher />
+      {grounded && <ShadowCatcher />}
       {product.url === 'builtin:faucet' ? (
         <Faucet />
       ) : product.url === 'builtin:cup' ? (
         <CoffeeCup />
       ) : (
         <Suspense fallback={null}>
-          <GltfModel url={product.url} scale={product.scale} />
+          <GltfModel url={product.url} scale={product.scale} grounded={grounded} />
         </Suspense>
       )}
     </group>

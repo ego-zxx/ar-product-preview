@@ -99,7 +99,7 @@ function Turntable({ product, ctrl }: { product: Product; ctrl: React.RefObject<
     <group ref={pitchRef}>
       <group ref={yawRef}>
         <group ref={modelRef}>
-          <Model product={product} />
+          <Model product={product} grounded={false} />
         </group>
       </group>
     </group>
