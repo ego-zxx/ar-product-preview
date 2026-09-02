@@ -466,7 +466,8 @@ lighting ${diag.lit ? 'ROOM ✓' : 'fixed rig ✗'}
 shadow ${diag.shadowFrom}
 occlusion ${diag.occlusion ? 'on' : 'off'}
 framebuffer ${diag.fb}
-anisotropy ${diag.anisotropy}`}
+anisotropy ${diag.anisotropy}
+room light ${diag.ambient} · exposure ${diag.exposure}`}
               </div>
             )}
             <div className="ar-status">

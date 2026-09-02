@@ -100,6 +100,13 @@ export const faceCameraYaw = (dirX: number, dirZ: number) => Math.atan2(-dirX, -
  * XREstimatedLight is used rather than a hand-rolled probe: it handles the
  * cube map format negotiation and the frame plumbing correctly.
  */
+/**
+ * Brightness of the room, as measured by the light estimate. Band 0 of the
+ * spherical harmonics is the average radiance, so its luminance is the one
+ * number that says how bright this room is.
+ */
+export const roomLight = { ambient: 0 }
+
 export type Diag = {
   fps: number
   lit: boolean
@@ -108,6 +115,9 @@ export type Diag = {
   fb: string
   anisotropy: number
   shadowFrom: string
+  /** room brightness from the light estimate, and the exposure trim it drives */
+  ambient: number
+  exposure: number
 }
 
 /**
@@ -138,6 +148,8 @@ export function DiagnosticsProbe({ lit, onSample }: { lit: boolean; onSample: (d
     )}`
     const fb = `${ctx.drawingBufferWidth}x${ctx.drawingBufferHeight} vs ${screen}`
 
+    const ambient = Number(roomLight.ambient.toFixed(2))
+    const exposure = Number(gl.toneMappingExposure.toFixed(2))
     let anisotropy = 0
     let shadowFrom = 'none'
     scene.traverse((o) => {
@@ -148,21 +160,57 @@ export function DiagnosticsProbe({ lit, onSample }: { lit: boolean; onSample: (d
         shadowFrom = l.parent?.name === 'room-light' ? 'room' : 'fixed'
       }
     })
-    onSample({ fps, lit, occlusion: occlusionStatus().enabled, fb, anisotropy, shadowFrom })
+    onSample({ fps, lit, occlusion: occlusionStatus().enabled, fb, anisotropy, shadowFrom, ambient, exposure })
   })
   return null
 }
 
+/**
+ * Exposure matching. The phone auto-exposes the camera feed toward mid-grey
+ * whatever the room's real brightness, while our render does not — so in a dim
+ * room the object comes out brighter than everything around it, which is the
+ * mismatch in the burger screenshot. This is the compositor's exposure match,
+ * driven by the only light meter we have.
+ *
+ * A Lambertian surface returns irradiance * albedo / PI, and three scales SH
+ * band 0 by 0.886227, so mid-grey (0.5) renders at 0.141 * c0. Solving for a
+ * mid-grey target of 0.18 gives the reference level below.
+ *
+ * ponytail: the trim may only darken. The reported symptom is objects sitting
+ * brighter than the room, and the estimate is not a light meter, so lifting on
+ * a guessed reference could undo the fixes above. ?debug=1 now prints the room
+ * level; raise EXPOSURE_MAX once there are real numbers from a dim room.
+ */
+export const EXPOSURE_REFERENCE = 1.28
+export const EXPOSURE_MIN = 0.78
+export const EXPOSURE_MAX = 1
+
+export const exposureTrim = (ambient: number) =>
+  ambient <= 0
+    ? 1
+    : Math.min(EXPOSURE_MAX, Math.max(EXPOSURE_MIN, EXPOSURE_REFERENCE / ambient))
+
 export function EstimatedLighting({ onActive }: { onActive: (on: boolean) => void }) {
   const { gl, scene } = useThree()
   const active = useRef<XREstimatedLight | null>(null)
-  // the shadow takes the ambient's colour: SH band 0 is the average radiance
-  useFrame(() => {
+  const exposure = useRef(new Damper(400))
+  const level = useRef(1)
+  // SH band 0 is the average radiance: it gives the shadow its colour and the
+  // render its exposure
+  useFrame((_, dt) => {
     const light = active.current
     if (!light) return
     const dc = light.lightProbe.sh.coefficients[0]
     const peak = Math.max(dc.x, dc.y, dc.z)
     if (peak > 0) shadowTint.setRGB(dc.x / peak, dc.y / peak, dc.z / peak).multiplyScalar(0.25)
+    roomLight.ambient = 0.2126 * dc.x + 0.7152 * dc.y + 0.0722 * dc.z
+    level.current = exposure.current.update(
+      level.current,
+      exposureTrim(roomLight.ambient),
+      dt * 1000,
+      1,
+    )
+    gl.toneMappingExposure = level.current
   })
   useEffect(() => {
     const xrLight = new XREstimatedLight(gl, true)
@@ -184,16 +232,30 @@ export function EstimatedLighting({ onActive }: { onActive: (on: boolean) => voi
     xrLight.directionalLight.shadow.normalBias = 0.02
 
     const previousEnvironment = scene.environment
+    const previousIntensity = scene.environmentIntensity
     const start = () => {
       scene.add(xrLight)
-      if (xrLight.environment) scene.environment = xrLight.environment
+      if (xrLight.environment) {
+        scene.environment = xrLight.environment
+        scene.environmentIntensity = 1
+        // The estimated reflection cube map already carries the room's ambient.
+        // Leaving the SH probe lit as well counts that ambient a second time,
+        // which is most of why the object read brighter than the room it sits
+        // in. three re-sets the probe's intensity every frame but never touches
+        // visibility, so this is the one switch that stays off.
+        xrLight.lightProbe.visible = false
+      }
       active.current = xrLight
       onActive(true)
     }
     const end = () => {
       scene.remove(xrLight)
       scene.environment = previousEnvironment
+      scene.environmentIntensity = previousIntensity
+      xrLight.lightProbe.visible = true
+      gl.toneMappingExposure = 1
       active.current = null
+      roomLight.ambient = 0
       shadowTint.setRGB(0, 0, 0)
       onActive(false)
     }
@@ -204,7 +266,11 @@ export function EstimatedLighting({ onActive }: { onActive: (on: boolean) => voi
       xrLight.removeEventListener('estimationend', end)
       scene.remove(xrLight)
       scene.environment = previousEnvironment
+      scene.environmentIntensity = previousIntensity
+      xrLight.lightProbe.visible = true
+      gl.toneMappingExposure = 1
       active.current = null
+      roomLight.ambient = 0
       shadowTint.setRGB(0, 0, 0)
       onActive(false)
     }
@@ -212,14 +278,25 @@ export function EstimatedLighting({ onActive }: { onActive: (on: boolean) => voi
   return null
 }
 
+/**
+ * How much of the synthetic studio to use while the room's own estimate is not
+ * available. RoomEnvironment is a bright white box with light panels; at full
+ * strength it lights the object like a showroom no matter how dim the actual
+ * room is, which is both too bright and too uniform. Dimmed, it survives as a
+ * source of reflections without claiming to be the room's light.
+ */
+export const ENV_FALLBACK_INTENSITY = 0.35
+
 export function Env() {
   const { gl, scene } = useThree()
   useEffect(() => {
     const pmrem = new PMREMGenerator(gl)
     const env = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
     scene.environment = env
+    scene.environmentIntensity = ENV_FALLBACK_INTENSITY
     return () => {
       scene.environment = null
+      scene.environmentIntensity = 1
       env.dispose()
       pmrem.dispose()
     }

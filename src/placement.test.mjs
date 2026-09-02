@@ -497,3 +497,28 @@ console.log('lens vignette ok')
 }
 
 console.log('plate response ok')
+
+// ARScene exposure matching: the phone auto-exposes the feed toward mid-grey,
+// so the render gets a trim from the room's measured brightness — bounded, and
+// never inverted (a brighter room must never raise exposure).
+{
+  const REFERENCE = 1.28, MIN = 0.78, MAX = 1
+  const exposureTrim = (a) => (a <= 0 ? 1 : Math.min(MAX, Math.max(MIN, REFERENCE / a)))
+
+  assert.equal(exposureTrim(0), 1, 'no estimate yet means no trim')
+  assert.equal(exposureTrim(REFERENCE), 1, 'a room at the reference level is left alone')
+  assert.ok(exposureTrim(4) === MIN, 'a bright room is pulled down to the floor')
+  assert.ok(exposureTrim(0.2) === MAX, 'a dim room is left alone, never lifted')
+  let last = Infinity
+  for (let a = 0.05; a < 6; a += 0.05) {
+    const e = exposureTrim(a)
+    assert.ok(e <= last + 1e-9, 'brighter room never means more exposure')
+    assert.ok(e >= MIN && e <= MAX, `trim stays in bounds, got ${e}`)
+    last = e
+  }
+  // the burger case: an object reading brighter than the room it sits in
+  assert.ok(exposureTrim(2.5) < 1, 'a room measuring above the reference is pulled down')
+  assert.equal(exposureTrim(0.6), 1, 'the trim never brightens on a guessed reference')
+}
+
+console.log('exposure matching ok')
