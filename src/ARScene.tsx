@@ -274,31 +274,11 @@ export function KeyLight() {
   )
 }
 
-/**
- * Base ring. Bright when selected; a faint one otherwise, so a placed object
- * reads as tappable — without it nothing on screen says the objects can be
- * picked up again.
- */
-function SelectionRing({ selected = true, hidden = false }: { selected?: boolean; hidden?: boolean }) {
-  if (hidden) return null
-  return (
-    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.002, 0]}>
-      <ringGeometry args={selected ? [0.1, 0.115, 48] : [0.085, 0.091, 48]} />
-      <meshBasicMaterial
-        color="#c9a227"
-        side={DoubleSide}
-        transparent
-        opacity={selected ? 0.95 : 0.3}
-        userData={{ noOcclusion: true }}
-      />
-    </mesh>
-  )
-}
 
 function FixedPlacement({
-  matrix, yaw, product, selected, hidden, innerRef,
+  matrix, yaw, product, innerRef,
 }: {
-  matrix: Matrix4; yaw: number; product: Product; selected: boolean; hidden: boolean
+  matrix: Matrix4; yaw: number; product: Product
   innerRef: (o: Object3D | null) => void
 }) {
   const pos = useRef(new Vector3()).current
@@ -310,9 +290,7 @@ function FixedPlacement({
   return (
     <group ref={innerRef} position={pos} quaternion={quat}>
       <group rotation-y={yaw}>
-        <Model product={product} />
-        <SelectionRing selected={selected} hidden={hidden} />
-      </group>
+        <Model product={product} /></group>
     </group>
   )
 }
@@ -664,9 +642,7 @@ export function Placement({
       <group ref={draftRef} visible={false}>
         {draft && (
           <>
-            <Model product={draft.product} />
-            <SelectionRing />
-          </>
+            <Model product={draft.product} /></>
         )}
       </group>
 
@@ -684,9 +660,7 @@ export function Placement({
         return space ? (
           <XRSpace key={o.id} space={space}>
             <group ref={setRef} rotation-y={o.yaw}>
-              <Model product={o.product} />
-              <SelectionRing selected={selectedId === o.id} hidden={uiHidden} />
-            </group>
+              <Model product={o.product} /></group>
           </XRSpace>
         ) : o.matrix ? (
           <FixedPlacement
@@ -694,8 +668,6 @@ export function Placement({
             matrix={o.matrix}
             yaw={o.yaw}
             product={o.product}
-            selected={selectedId === o.id}
-            hidden={uiHidden}
             innerRef={setRef}
           />
         ) : null

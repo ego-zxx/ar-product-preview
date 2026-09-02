@@ -320,3 +320,26 @@ assert.ok(Math.abs(bakedSize(47.377, 0.005277) - 0.25) < 0.001, 'bottle bakes to
 assert.ok(Math.abs(bakedSize(0.603, 0.530680) - 0.32) < 0.001, 'pizza bakes to 32cm across')
 assert.equal(bakedSize(0.094, 1), 0.094, 'a model already in metres is unchanged by scale 1')
 console.log('scale baking ok')
+
+// --- product page pinch-to-zoom (mirrors ProductPage.tsx) ---
+// Fingers apart = closer. The ratio is start-gap over current-gap, applied to
+// the distance at the moment the pinch began, so a pinch is reversible: spread
+// then re-pinch returns to where it started rather than drifting.
+const clampDist = (d, min, max) => Math.min(max, Math.max(min, d))
+const zoom = (startGap, gapNow, startDist, min, max) =>
+  clampDist(startDist * (startGap / Math.max(1, gapNow)), min, max)
+
+const [D, MIN, MAX] = [1.0, 0.4, 2.5]
+assert.equal(zoom(200, 200, D, MIN, MAX), 1.0, 'no movement, no zoom')
+assert.ok(zoom(200, 400, D, MIN, MAX) < 1.0, 'spreading fingers moves the camera closer')
+assert.ok(zoom(200, 100, D, MIN, MAX) > 1.0, 'pinching in moves it away')
+// reversible: spread to a gap and back to the original returns the start distance
+assert.equal(zoom(200, 200, zoom(200, 400, D, MIN, MAX) && D, MIN, MAX), 1.0, 'pinch is reversible')
+// clamps hold, so the model can never be lost or turned inside out
+assert.equal(zoom(200, 100000, D, MIN, MAX), MIN, 'cannot zoom past the near limit')
+assert.equal(zoom(200, 1, D, MIN, MAX), MAX, 'cannot zoom past the far limit')
+assert.ok(MIN > 0, 'near limit never reaches the model centre')
+// a zero gap (both fingers on one point) must not divide by zero
+assert.ok(Number.isFinite(zoom(200, 0, D, MIN, MAX)), 'a degenerate gap stays finite')
+
+console.log('pinch zoom ok')

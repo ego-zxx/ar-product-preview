@@ -58,11 +58,18 @@ function Turntable({ product, ctrl }: { product: Product; ctrl: React.RefObject<
       // sit the model's centre on the origin so it orbits about itself
       modelRef.current.position.sub(centre)
       const radius = Math.max(size.x, size.y, size.z) * 0.5
-      const dist = radius / Math.tan((camera.fov * Math.PI) / 360)
-      camera.position.set(0, radius * 0.55, dist * 2.1)
+      const fit = radius / Math.tan((camera.fov * Math.PI) / 360)
+      camera.position.set(0, radius * 0.55, fit * 2.1)
+      const c = ctrl.current
+      c.dir = camera.position.clone().normalize()
+      c.dist = c.targetDist = camera.position.length()
+      // half a step in, two and a half out — enough to inspect a logo without
+      // being able to lose the object entirely
+      c.minDist = c.dist * 0.4
+      c.maxDist = c.dist * 2.5
       camera.lookAt(0, 0, 0)
-      camera.near = dist / 100
-      camera.far = dist * 20
+      camera.near = c.minDist / 100
+      camera.far = c.maxDist * 20
       camera.updateProjectionMatrix()
       framed.current = true
     }
@@ -80,6 +87,12 @@ function Turntable({ product, ctrl }: { product: Product; ctrl: React.RefObject<
     c.pitch += (c.targetPitch - c.pitch) * k
     if (pitchRef.current) pitchRef.current.rotation.x = c.pitch
     if (yawRef.current) yawRef.current.rotation.y = c.yaw
+
+    if (framed.current) {
+      c.dist += (c.targetDist - c.dist) * k
+      camera.position.copy(c.dir).multiplyScalar(c.dist)
+      camera.lookAt(0, 0, 0)
+    }
   })
 
   return (
@@ -99,6 +112,13 @@ export type Orbit = {
   targetYaw: number
   targetPitch: number
   dragging: boolean
+  /** camera distance from the model, for pinch and wheel zoom */
+  dist: number
+  targetDist: number
+  minDist: number
+  maxDist: number
+  /** unit vector the camera sits along; zoom scales it */
+  dir: Vector3
 }
 
 /** Stop short of straight up/down, where a turntable flips and feels broken. */
@@ -204,8 +224,21 @@ export function ProductPage({
     targetYaw: 0,
     targetPitch: 0.25,
     dragging: false,
+    dist: 1,
+    targetDist: 1,
+    minDist: 0.5,
+    maxDist: 3,
+    dir: new Vector3(0, 0.3, 1).normalize(),
   })
   const drag = useRef<{ x: number; y: number; yaw: number; pitch: number } | null>(null)
+  /** every finger currently down, so one can rotate and two can pinch */
+  const pointers = useRef(new Map<number, { x: number; y: number }>()).current
+  const pinch = useRef<{ gap: number; dist: number } | null>(null)
+
+  const gap = () => {
+    const [a, b] = [...pointers.values()]
+    return Math.hypot(b.x - a.x, b.y - a.y)
+  }
 
   return (
     <div className="page">
@@ -216,28 +249,63 @@ export function ProductPage({
       <div
         className="turntable"
         onPointerDown={(e) => {
-          const c = ctrl.current
-          drag.current = { x: e.clientX, y: e.clientY, yaw: c.targetYaw, pitch: c.targetPitch }
-          c.dragging = true
           ;(e.target as Element).setPointerCapture?.(e.pointerId)
+          pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
+          const c = ctrl.current
+          c.dragging = true
+          if (pointers.size === 2) {
+            // second finger down: start a pinch and stop rotating, otherwise
+            // both fingers drive the rotation and it fights itself
+            pinch.current = { gap: gap(), dist: c.targetDist }
+            drag.current = null
+          } else if (pointers.size === 1) {
+            drag.current = { x: e.clientX, y: e.clientY, yaw: c.targetYaw, pitch: c.targetPitch }
+          }
         }}
         onPointerMove={(e) => {
+          if (!pointers.has(e.pointerId)) return
+          pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
+          const c = ctrl.current
+          if (pointers.size >= 2 && pinch.current) {
+            const ratio = pinch.current.gap / Math.max(1, gap())
+            c.targetDist = Math.min(c.maxDist, Math.max(c.minDist, pinch.current.dist * ratio))
+            return
+          }
           const d = drag.current
           if (!d) return
-          const c = ctrl.current
           c.targetYaw = d.yaw + (e.clientX - d.x) * 0.012
           c.targetPitch = Math.min(
             PITCH_MAX,
             Math.max(PITCH_MIN, d.pitch + (e.clientY - d.y) * 0.012),
           )
         }}
-        onPointerUp={() => {
-          drag.current = null
-          ctrl.current.dragging = false
+        onPointerUp={(e) => {
+          pointers.delete(e.pointerId)
+          if (pointers.size < 2) pinch.current = null
+          if (pointers.size === 0) {
+            drag.current = null
+            ctrl.current.dragging = false
+          } else {
+            // a finger lifted mid-pinch: re-seat the drag on the one remaining
+            const [only] = [...pointers.values()]
+            const c = ctrl.current
+            drag.current = { x: only.x, y: only.y, yaw: c.targetYaw, pitch: c.targetPitch }
+          }
         }}
-        onPointerCancel={() => {
-          drag.current = null
-          ctrl.current.dragging = false
+        onPointerCancel={(e) => {
+          pointers.delete(e.pointerId)
+          pinch.current = null
+          if (pointers.size === 0) {
+            drag.current = null
+            ctrl.current.dragging = false
+          }
+        }}
+        onWheel={(e) => {
+          const c = ctrl.current
+          c.targetDist = Math.min(
+            c.maxDist,
+            Math.max(c.minDist, c.targetDist * (1 + Math.sign(e.deltaY) * 0.12)),
+          )
         }}
       >
         <Canvas camera={{ fov: 35, position: [0, 0.1, 0.4] }}>
@@ -246,7 +314,7 @@ export function ProductPage({
           <directionalLight position={[2, 4, 3]} intensity={1.3} />
           <Turntable product={product} ctrl={ctrl} />
         </Canvas>
-        <span className="turntable-hint">Drag to turn · up and down to tilt</span>
+        <span className="turntable-hint">Drag to turn · pinch to zoom</span>
       </div>
 
       <h1 className="title" style={{ marginBottom: 0 }}>
