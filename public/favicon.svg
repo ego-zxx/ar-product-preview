@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="AR Preview">
+  <title>AR Preview</title>
+  <!--
+    A product standing inside placement brackets: the two things this app does.
+    Designed at 16px first, where a favicon actually lives. Everything here is
+    sized by that constraint — the brackets are corner ticks rather than framed
+    corners, the solid is large enough to hold three tones at a quarter of an
+    inch, and there is clear dark between the two so they do not merge.
+  -->
+  <defs>
+    <linearGradient id="ground" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1c1815" />
+      <stop offset="1" stop-color="#0c0a09" />
+    </linearGradient>
+  </defs>
+
+  <rect width="32" height="32" rx="7" fill="url(#ground)" />
+
+  <!-- placement brackets, pushed into the corners to leave the solid room -->
+  <g fill="none" stroke="#c9a227" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M3.6 8.6v-5h5" />
+    <path d="M23.4 3.6h5v5" />
+    <path d="M28.4 23.4v5h-5" />
+    <path d="M8.6 28.4h-5v-5" />
+  </g>
+
+  <!-- the product: an isometric solid, three tones so it reads as volume -->
+  <g>
+    <path d="M16 8.5 22.5 12.25 16 16 9.5 12.25Z" fill="#f2d67f" />
+    <path d="M22.5 12.25v7.5L16 23.5V16Z" fill="#c9a227" />
+    <path d="M9.5 12.25v7.5L16 23.5V16Z" fill="#7d5f14" />
+  </g>
+</svg>
