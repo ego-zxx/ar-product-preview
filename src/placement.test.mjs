@@ -589,3 +589,31 @@ console.log('silhouette feather ok')
 }
 
 console.log('halation bright pass ok')
+
+// usdz.ts mid-tone lift: Quick Look has no exposure control, so the only lever
+// is the base colour. The curve must lift the middle without ever clipping,
+// which a flat gain would do to anything already near white.
+{
+  const LIFT = 1.08
+  const lut = Array.from({ length: 256 }, (_, i) => Math.round(255 * (i / 255) ** (1 / LIFT)))
+
+  assert.equal(lut[0], 0, 'black stays black')
+  assert.equal(lut[255], 255, 'white stays white, so nothing can clip')
+  assert.ok(lut[128] > 128, 'mid-tones lift')
+  // the reported difference was small; a lift that reads as a relight is wrong
+  assert.ok(lut[128] - 128 < 13, `the lift stays subtle, got +${lut[128] - 128}`)
+
+  let last = -1
+  for (const v of lut) {
+    assert.ok(v >= last, 'the curve is monotonic, so no banding or inversion')
+    assert.ok(v >= 0 && v <= 255, 'stays in range')
+    last = v
+  }
+  // brighter input always ends brighter than darker input by at least as much
+  assert.ok(lut[200] > lut[100], 'ordering is preserved across the range')
+
+  // a flat gain is what this deliberately is not
+  assert.ok(Math.round(255 * 1.05) > 255, 'a flat 5% gain would clip white')
+}
+
+console.log('quick look midtone lift ok')

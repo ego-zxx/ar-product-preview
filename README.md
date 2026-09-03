@@ -238,6 +238,15 @@ reading its source rather than guessing:
   stopping at the object's edge. It disables itself below `MIN_FPS`;
   `?nohalation=1` turns it off outright and `?debug=1` reports whether it ran.
 - **Placement** turns the product's front toward the camera.
+- **iOS renders none of the above.** Quick Look draws the USDZ with its own
+  renderer, so the camera matching, exposure and shadow work apply to Android
+  only. What the export can carry, it now does: the same metalness correction
+  the WebXR path makes (the export loads its own copy of the glTF, so a model
+  shipping metalness 0.12 was losing that much diffuse on iOS and nothing
+  else), full-size normal and roughness maps (the exporter halves anything
+  above 1K by default), and a gentle mid-tone lift on the base colour to
+  answer Quick Look's darker tone curve, shaped as a gamma so neither black nor
+  white moves and nothing clips. `IOS_MIDTONE_LIFT` is the knob.
 - Material corrections in `src/materials.ts` are compensations for weak assets
   and disable themselves on well-authored ones: metalness is only snapped when
   there is no metalnessMap, roughness only varied when there is no
