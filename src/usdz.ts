@@ -10,12 +10,12 @@
  * ponytail: generated on demand and cached in memory. If conversion ever
  * becomes the slow part, pre-build USDZ at upload time and serve it instead.
  */
-import { Box3, CanvasTexture, Group, Vector3 } from 'three'
+import { Box3, CanvasTexture, Group, NoColorSpace, Vector3 } from 'three'
 import type { Material, Mesh, MeshStandardMaterial, Object3D, Texture } from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { USDZExporter } from 'three/addons/exporters/USDZExporter.js'
 import { groundingOffset } from './Model'
-import { correctMetalness } from './materials'
+import { correctMetalness, ROUGHNESS_VARIATION } from './materials'
 import type { Product } from './products'
 
 /** iPadOS reports itself as a Mac, so touch points are the reliable tell. */
@@ -124,6 +124,69 @@ function liftTexture(source: Texture): Texture | null {
   return texture
 }
 
+/** sRGB byte to linear, so luminance is measured the way the shader measures it. */
+const TO_LINEAR = Float32Array.from({ length: 256 }, (_, i) => {
+  const v = i / 255
+  return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
+})
+
+/**
+ * Bake the gloss variation into a texture, because USD has no shader hook.
+ *
+ * `varyRoughness` breaks up the flat single roughness value a model without a
+ * roughness map would otherwise have, reading the colour map's own luminance as
+ * a stand-in. It does that in the fragment shader, which Quick Look never runs,
+ * so iOS was left with one gloss value across a whole bun — the plastic-toy
+ * look. The same formula evaluated per texel and written out as a real
+ * roughness map gives iOS the identical treatment.
+ *
+ * The value goes in green because that is where glTF keeps roughness and what
+ * the USD exporter connects, and the texture is raw data rather than colour, so
+ * it must not be tagged sRGB.
+ */
+function bakedRoughness(map: Texture, base: number): Texture | null {
+  const image = map.image as CanvasImageSource & { width?: number; height?: number }
+  if (!image?.width || !image?.height) return null
+  const scale = Math.min(1, 1024 / Math.max(image.width, image.height))
+
+  const source = document.createElement('canvas')
+  source.width = Math.max(1, Math.round(image.width * scale))
+  source.height = Math.max(1, Math.round(image.height * scale))
+  const ctx = source.getContext('2d', { willReadFrequently: true })
+  if (!ctx) return null
+  ctx.drawImage(image, 0, 0, source.width, source.height)
+
+  let pixels
+  try {
+    pixels = ctx.getImageData(0, 0, source.width, source.height)
+  } catch {
+    return null
+  }
+  const data = pixels.data
+  for (let i = 0; i < data.length; i += 4) {
+    const lum =
+      0.299 * TO_LINEAR[data[i]] + 0.587 * TO_LINEAR[data[i + 1]] + 0.114 * TO_LINEAR[data[i + 2]]
+    const rough = Math.min(1, Math.max(0.04, base + (0.5 - lum) * ROUGHNESS_VARIATION))
+    const byte = Math.round(rough * 255)
+    data[i] = byte
+    data[i + 1] = byte
+    data[i + 2] = byte
+    data[i + 3] = 255
+  }
+  ctx.putImageData(pixels, 0, 0)
+
+  const texture = new CanvasTexture(source)
+  texture.flipY = map.flipY
+  // data, not colour: tagging this sRGB would skew every roughness value
+  texture.colorSpace = NoColorSpace
+  texture.wrapS = map.wrapS
+  texture.wrapT = map.wrapT
+  texture.repeat.copy(map.repeat)
+  texture.offset.copy(map.offset)
+  texture.channel = map.channel
+  return texture
+}
+
 /**
  * The materials Quick Look is handed are not the ones our own renderer draws:
  * the export loads its own copy of the glTF, so every correction made on the
@@ -143,6 +206,14 @@ function prepareForQuickLook(root: Object3D) {
       const m = material as MeshStandardMaterial
       if (!m.isMeshStandardMaterial) continue
       correctMetalness(m)
+      if (m.map && !m.roughnessMap) {
+        const roughness = bakedRoughness(m.map, m.roughness ?? 1)
+        if (roughness) {
+          m.roughnessMap = roughness
+          // the exporter connects roughness straight to the map and ignores
+          // the scalar, so the base value is already baked into the texture
+        }
+      }
       if (m.map) {
         const texture = liftTexture(m.map)
         if (texture) m.map = texture

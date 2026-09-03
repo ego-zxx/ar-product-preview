@@ -617,3 +617,39 @@ console.log('halation bright pass ok')
 }
 
 console.log('quick look midtone lift ok')
+
+// usdz.ts baked roughness: iOS cannot run the shader that breaks up flat gloss,
+// so the same formula is written into a texture. It has to agree with the
+// shader, stay in range, and keep a dark patch rougher than a light one.
+{
+  const VARIATION = 0.35
+  const toLinear = (b) => { const v = b / 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4 }
+  const bake = (r, g, b, base) => {
+    const lum = 0.299 * toLinear(r) + 0.587 * toLinear(g) + 0.114 * toLinear(b)
+    return Math.min(1, Math.max(0.04, base + (0.5 - lum) * VARIATION))
+  }
+
+  // mirrors the shader in materials.ts, which works on linear colour
+  const shader = (linear, base) => Math.min(1, Math.max(0.04, base + (0.5 - linear) * VARIATION))
+  const grey = 128
+  assert.ok(
+    Math.abs(bake(grey, grey, grey, 0.6) - shader(toLinear(grey), 0.6)) < 1e-9,
+    'the baked value matches the shader for the same colour',
+  )
+
+  const dark = bake(20, 20, 20, 0.6)
+  const light = bake(240, 240, 240, 0.6)
+  assert.ok(dark > light, 'darker, dirtier areas come out rougher, as in the shader')
+  for (const base of [0, 0.4, 1]) {
+    for (const v of [0, 64, 128, 200, 255]) {
+      const out = bake(v, v, v, base)
+      assert.ok(out >= 0.04 && out <= 1, `roughness stays in range, got ${out}`)
+    }
+  }
+  // a fully black texel must not drive roughness past 1 at an already-rough base
+  assert.equal(bake(0, 0, 0, 1), 1, 'clamped at fully rough')
+  // sRGB must be decoded first: mid-grey is not 0.5 in linear
+  assert.ok(toLinear(128) < 0.25, 'mid-grey decodes well below linear 0.5')
+}
+
+console.log('quick look baked roughness ok')

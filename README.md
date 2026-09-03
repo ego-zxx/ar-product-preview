@@ -247,6 +247,10 @@ reading its source rather than guessing:
   above 1K by default), and a gentle mid-tone lift on the base colour to
   answer Quick Look's darker tone curve, shaped as a gamma so neither black nor
   white moves and nothing clips. `IOS_MIDTONE_LIFT` is the knob.
+  The gloss variation is baked too: `varyRoughness` runs in a fragment shader
+  Quick Look never executes, so a model with no roughness map had one flat
+  gloss value across a whole bun on iOS. The same formula is evaluated per
+  texel into a real roughness map at export — three maps, half a megabyte.
 - Material corrections in `src/materials.ts` are compensations for weak assets
   and disable themselves on well-authored ones: metalness is only snapped when
   there is no metalnessMap, roughness only varied when there is no
