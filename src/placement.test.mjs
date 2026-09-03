@@ -594,14 +594,17 @@ console.log('halation bright pass ok')
 // is the base colour. The curve must lift the middle without ever clipping,
 // which a flat gain would do to anything already near white.
 {
-  const LIFT = 1.08
+  const LIFT = 1.3
   const lut = Array.from({ length: 256 }, (_, i) => Math.round(255 * (i / 255) ** (1 / LIFT)))
 
   assert.equal(lut[0], 0, 'black stays black')
   assert.equal(lut[255], 255, 'white stays white, so nothing can clip')
   assert.ok(lut[128] > 128, 'mid-tones lift')
-  // the reported difference was small; a lift that reads as a relight is wrong
-  assert.ok(lut[128] - 128 < 13, `the lift stays subtle, got +${lut[128] - 128}`)
+  // has to clear the threshold of noticing: 1.08 lifted a real bun texture by
+  // four per cent and the device reported no change at all
+  assert.ok(lut[128] - 128 > 15, `the lift is perceptible, got +${lut[128] - 128}`)
+  // but a lift that reads as a relight rather than a match is equally wrong
+  assert.ok(lut[128] - 128 < 45, `the lift is still a match, got +${lut[128] - 128}`)
 
   let last = -1
   for (const v of lut) {

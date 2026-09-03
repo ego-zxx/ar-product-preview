@@ -246,7 +246,10 @@ reading its source rather than guessing:
   else), full-size normal and roughness maps (the exporter halves anything
   above 1K by default), and a gentle mid-tone lift on the base colour to
   answer Quick Look's darker tone curve, shaped as a gamma so neither black nor
-  white moves and nothing clips. `IOS_MIDTONE_LIFT` is the knob.
+  white moves and nothing clips. `IOS_MIDTONE_LIFT` is the knob, and
+  `?ioslift=1.5` overrides it on the device so the value can be found in one
+  sitting. Calibrating it needs measurement, not taste: 1.08 moved a real bun
+  texture's mean from 128.4 to 133.8, which the device reported as no change.
   The gloss variation is baked too: `varyRoughness` runs in a fragment shader
   Quick Look never executes, so a model with no roughness map had one flat
   gloss value across a whole bun on iOS. The same formula is evaluated per

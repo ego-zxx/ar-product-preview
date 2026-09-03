@@ -70,10 +70,16 @@ const cache = new Map<string, string>()
  * mid-tones where the difference actually shows come up.
  *
  * ponytail: a calibration constant, not a measurement — Apple does not publish
- * the curve. 1.08 lifts mid-grey by about five per cent, which is the size of
- * the reported difference. This is the knob if iOS still reads dark.
+ * the curve. The first attempt at 1.08 moved the Double Stack's bun texture
+ * from a mean of 128.4 to 133.8, four per cent, which is below the threshold
+ * of noticing and read as no change at all. 1.3 lifts it about seventeen.
+ *
+ * `?ioslift=1.5` overrides it, so the right value can be found on the device in
+ * one sitting instead of one round trip per guess. Clamped to sane bounds.
  */
-export const IOS_MIDTONE_LIFT = 1.08
+const requested = Number(new URLSearchParams(location.search).get('ioslift'))
+export const IOS_MIDTONE_LIFT =
+  Number.isFinite(requested) && requested >= 1 && requested <= 2 ? requested : 1.3
 
 /** 8-bit lookup for the lift, so a 2K texture is a table read per channel. */
 export const midtoneLut = (lift: number) =>
