@@ -273,6 +273,17 @@ reading its source rather than guessing:
   creation date to infer from. `withIblVersion` in `src/usdz.ts` reopens the
   archive and writes 2 into the root layer, repacking with the 64-byte
   alignment USDZ requires. Everything else about iOS lighting belongs to ARKit.
+- **The iOS levers, in full.** Quick Look ignores any `UsdLux` light in the
+  archive and lights from ARKit's estimate, so the only things we can set are
+  `preferredIblVersion` above and the `UsdPreviewSurface` inputs, all of which
+  it honours. Those now carry: corrected metalness, a baked roughness map, a
+  mid-tone lift on base colour, a softened occlusion map (`IOS_OCCLUSION` —
+  three applies `aoMap` to indirect diffuse alone while Quick Look attenuates
+  more of the lighting, so an AO-carrying model came out darker on iOS from the
+  same texture), and an emissive fill (`IOS_FILL`). The fill matters most: it
+  is the one input independent of the estimate, so it lifts the shadows a
+  brighter albedo cannot reach, in the material's own colour. `?ioslift=` and
+  `?iosfill=` tune the last two on the device.
 - **iOS renders none of the above.** Quick Look draws the USDZ with its own
   renderer, so the camera matching, exposure and shadow work apply to Android
   only. What the export can carry, it now does: the same metalness correction

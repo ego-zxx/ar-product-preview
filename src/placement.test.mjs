@@ -798,3 +798,24 @@ console.log('quick look banner ok')
 }
 
 console.log('quick look ibl version ok')
+
+// usdz.ts override parsing: a bound that starts at zero must not be satisfied
+// by an absent parameter, or the feature turns itself off for everyone.
+{
+  const read = (value, lo, hi, fallback) => {
+    if (value === null || value === '') return fallback
+    const n = Number(value)
+    return Number.isFinite(n) && n >= lo && n <= hi ? n : fallback
+  }
+  assert.equal(read(null, 0, 0.3, 0.08), 0.08, 'an absent parameter uses the default')
+  assert.equal(read('0', 0, 0.3, 0.08), 0, 'an explicit zero still turns it off')
+  assert.equal(read('0.15', 0, 0.3, 0.08), 0.15, 'a value in range is honoured')
+  assert.equal(read('9', 0, 0.3, 0.08), 0.08, 'out of range falls back')
+  assert.equal(read('abc', 0, 0.3, 0.08), 0.08, 'nonsense falls back')
+  assert.equal(read('', 0, 0.3, 0.08), 0.08, 'an empty value falls back, not to zero')
+
+  // Number(null) is 0 and Number('') is 0: the trap this guards
+  assert.equal(Number(null), 0, 'Number(null) is zero, which is why null is checked first')
+}
+
+console.log('override parsing ok')

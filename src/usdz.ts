@@ -81,9 +81,49 @@ const cache = new Map<string, string>()
  * `?ioslift=1.5` overrides it, so the right value can be found on the device in
  * one sitting instead of one round trip per guess. Clamped to sane bounds.
  */
-const requested = Number(new URLSearchParams(location.search).get('ioslift'))
-export const IOS_MIDTONE_LIFT =
-  Number.isFinite(requested) && requested >= 1 && requested <= 2 ? requested : 1.3
+/**
+ * A tuning knob readable from the URL, so these can be found on the device
+ * rather than one round trip per guess.
+ *
+ * Absent and empty are both rejected before Number sees them: Number(null) and
+ * Number('') are 0, which sails through any bound starting at zero and would
+ * silently switch a feature off for everyone who never asked for it.
+ */
+export function readOverride(name: string, lo: number, hi: number, fallback: number) {
+  const raw = new URLSearchParams(location.search).get(name)
+  if (raw === null || raw === '') return fallback
+  const value = Number(raw)
+  return Number.isFinite(value) && value >= lo && value <= hi ? value : fallback
+}
+
+/**
+ * Ambient fill, as a fraction of a material's own colour.
+ *
+ * Quick Look honours every UsdPreviewSurface input, and emissiveColor is the
+ * only one that does not depend on ARKit's estimate: it is added whatever the
+ * room does. Lifting the albedo cannot reach a shadow, because albedo is
+ * multiplied by light and there is none there — which is why the mid-tone lift
+ * kept helping a little and never finishing the job. This lifts exactly the
+ * places the light does not reach, in the material's own colour rather than a
+ * grey wash, and is the compositor's shadow lift rather than a relight.
+ *
+ * ponytail: kept small on purpose. Emissive is self-illumination, and past a
+ * point food stops looking lit and starts looking radioactive. ?iosfill=0
+ * turns it off, ?iosfill=0.15 pushes it.
+ */
+export const IOS_FILL = readOverride('iosfill', 0, 0.3, 0.08)
+
+/**
+ * How much of a baked occlusion map to keep.
+ *
+ * three applies aoMap to indirect diffuse alone; Quick Look's occlusion input
+ * attenuates more of the lighting than that, so a model carrying an AO map —
+ * the Classic Cheeseburger does — comes out darker on iOS than on Android from
+ * the same texture. Softening it toward white brings the two back in line.
+ */
+export const IOS_OCCLUSION = 0.55
+
+export const IOS_MIDTONE_LIFT = readOverride('ioslift', 1, 2, 1.5)
 
 /** 8-bit lookup for the lift, so a 2K texture is a table read per channel. */
 export const midtoneLut = (lift: number) =>
@@ -91,6 +131,8 @@ export const midtoneLut = (lift: number) =>
 
 const LUT = midtoneLut(IOS_MIDTONE_LIFT)
 const lifted = new WeakMap<Texture, Texture>()
+/** Average colour of a base map, linear, for the fill to take its hue from. */
+const meanColour = new WeakMap<Texture, [number, number, number]>()
 
 function liftTexture(source: Texture): Texture | null {
   const cached = lifted.get(source)
@@ -113,12 +155,21 @@ function liftTexture(source: Texture): Texture | null {
     return null
   }
   const data = pixels.data
+  let sumR = 0
+  let sumG = 0
+  let sumB = 0
   for (let i = 0; i < data.length; i += 4) {
+    // measured before the lift, so the fill follows the material as authored
+    sumR += TO_LINEAR[data[i]]
+    sumG += TO_LINEAR[data[i + 1]]
+    sumB += TO_LINEAR[data[i + 2]]
     data[i] = LUT[data[i]]
     data[i + 1] = LUT[data[i + 1]]
     data[i + 2] = LUT[data[i + 2]]
   }
   ctx.putImageData(pixels, 0, 0)
+  const count = data.length / 4
+  meanColour.set(source, [sumR / count, sumG / count, sumB / count])
 
   const texture = new CanvasTexture(canvas)
   // CanvasTexture flips by default and glTF textures do not; the exporter
@@ -197,6 +248,38 @@ function bakedRoughness(map: Texture, base: number): Texture | null {
   return texture
 }
 
+/** Lift a baked occlusion map toward white, keeping IOS_OCCLUSION of its bite. */
+function softenOcclusion(map: Texture): Texture | null {
+  const image = map.image as CanvasImageSource & { width?: number; height?: number }
+  if (!image?.width || !image?.height) return null
+  const canvas = document.createElement('canvas')
+  canvas.width = image.width
+  canvas.height = image.height
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })
+  if (!ctx) return null
+  ctx.drawImage(image, 0, 0)
+  let pixels
+  try {
+    pixels = ctx.getImageData(0, 0, canvas.width, canvas.height)
+  } catch {
+    return null
+  }
+  const data = pixels.data
+  for (let i = 0; i < data.length; i += 4) {
+    for (let c = 0; c < 3; c++) data[i + c] = 255 - (255 - data[i + c]) * IOS_OCCLUSION
+  }
+  ctx.putImageData(pixels, 0, 0)
+  const texture = new CanvasTexture(canvas)
+  texture.flipY = map.flipY
+  texture.colorSpace = NoColorSpace
+  texture.wrapS = map.wrapS
+  texture.wrapT = map.wrapT
+  texture.repeat.copy(map.repeat)
+  texture.offset.copy(map.offset)
+  texture.channel = map.channel
+  return texture
+}
+
 /**
  * The materials Quick Look is handed are not the ones our own renderer draws:
  * the export loads its own copy of the glTF, so every correction made on the
@@ -224,14 +307,26 @@ function prepareForQuickLook(root: Object3D) {
           // the scalar, so the base value is already baked into the texture
         }
       }
+      if (m.aoMap) {
+        const softened = softenOcclusion(m.aoMap)
+        if (softened) m.aoMap = softened
+      }
       if (m.map) {
-        const texture = liftTexture(m.map)
+        const original = m.map
+        const texture = liftTexture(original)
         if (texture) m.map = texture
+        const mean = meanColour.get(original)
+        // fill in the material's own colour, so a shadow lifts warm on a bun
+        // and green on lettuce rather than toward a uniform grey
+        if (mean && IOS_FILL > 0) {
+          m.emissive.setRGB(mean[0] * IOS_FILL, mean[1] * IOS_FILL, mean[2] * IOS_FILL)
+        }
       } else {
         // untextured materials carry their colour linearly, where the same
         // gamma still lifts the middle and pins both ends
         const lift = (v: number) => v ** (1 / IOS_MIDTONE_LIFT)
         m.color.setRGB(lift(m.color.r), lift(m.color.g), lift(m.color.b))
+        if (IOS_FILL > 0) m.emissive.copy(m.color).multiplyScalar(IOS_FILL)
       }
     }
   })
