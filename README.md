@@ -207,6 +207,17 @@ reading its source rather than guessing:
   render's pure blacks and clean whites are a tell even under matched light.
 - **Shadow colour** follows the room's ambient (SH band 0 → `shadowTint`), as
   a photographed shadow is the surface lit by ambient alone, never black.
+- **The feed is measured, not assumed** (`src/exposure.ts`). Everything about
+  the object's brightness used to be open loop: the light estimate says how
+  bright the room *is*, the phone's auto-exposure decides how bright it *looks*,
+  and nothing connected the two — so a constant tuned in one room was wrong in
+  the next. With the `camera-access` feature granted, each frame's view carries
+  the camera image as a texture; it is shrunk to 32x32 and read back on a
+  throttle, giving the feed's real black point, mid-tone and white point. The
+  object's blacks are then lifted onto the room's own floor, its whites rolled
+  to the room's own ceiling, and its exposure follows what the phone actually
+  recorded. Only statistics are computed and nothing leaves the device. Where
+  the feature is missing or refused it falls back to the estimate, as before.
 - **Exposure** is matched to the feed, not left at 1. The room's ambient is
   counted once (the estimated cube map supplies it, so the SH probe is hidden
   while that map is in use — counting both made objects roughly twice as bright

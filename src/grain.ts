@@ -24,6 +24,10 @@ export const grainUniforms = {
   uVignette: { value: 0 },
   // 1 in AR: shape the object's tones like the camera's ISP shapes the feed
   uPlate: { value: 0 },
+  // black point and highlight roll-off, measured off the camera feed when raw
+  // camera access is granted; these are the fallbacks until then
+  uPlateBlack: { value: 0.03 },
+  uPlateRoll: { value: 0.5 },
   // silhouette feather width in pixels; 0 outside AR
   uEdgeFeather: { value: 0 },
 }
@@ -71,7 +75,10 @@ export const featherAt = (ndv: number, texelWidth: number, pixels: number) => {
  * deeper and its whites cleaner than anything in the feed, which is a tell
  * even when the lighting matches.
  *
- * ponytail: fixed curve, not sampled from the feed. Lift 0.03, white → 0.89.
+ * The numbers are no longer assumed: `exposure.ts` measures the feed's own
+ * black and white points and writes them here, so the object's blacks sit on
+ * the same floor as the room's blacks and its whites roll to the same ceiling.
+ * The values below are only what is used before a measurement arrives.
  */
 export const PLATE_LIFT = 0.03
 
@@ -119,6 +126,8 @@ export function patchForGrain(material: Material) {
         uniform vec2 uLensRes;
         uniform float uVignette;
         uniform float uPlate;
+        uniform float uPlateBlack;
+        uniform float uPlateRoll;
         uniform float uEdgeFeather;`,
       )
       .replace(
@@ -127,8 +136,8 @@ export function patchForGrain(material: Material) {
         {
           // plate response, see PLATE_LIFT
           vec3 c = gl_FragColor.rgb;
-          c = 0.03 + c * 0.97;
-          c = c / (1.0 + 0.5 * max(c - 0.75, 0.0));
+          c = uPlateBlack + c * (1.0 - uPlateBlack);
+          c = c / (1.0 + uPlateRoll * max(c - 0.75, 0.0));
           float l = dot(c, vec3(0.299, 0.587, 0.114));
           float keep = 1.0 - 0.2 * (smoothstep(0.6, 1.0, l) + smoothstep(0.15, 0.0, l));
           gl_FragColor.rgb = mix(gl_FragColor.rgb, mix(vec3(l), c, keep), uPlate);

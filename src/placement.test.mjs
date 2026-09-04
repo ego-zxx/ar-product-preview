@@ -656,3 +656,55 @@ console.log('quick look midtone lift ok')
 }
 
 console.log('quick look baked roughness ok')
+
+// exposure.ts: with the camera feed measured, exposure follows what the phone
+// actually recorded rather than a constant tuned in one room.
+{
+  const MID_TARGET = 0.18, MIN = 0.75, MAX = 1.3
+  const exposureFor = (mid) =>
+    mid <= 0 ? 1 : Math.min(MAX, Math.max(MIN, Math.sqrt(mid / MID_TARGET)))
+  const rollFor = (white) =>
+    white <= 0 ? 0.5 : Math.min(2, Math.max(0, (4 * (1 - white)) / white))
+
+  assert.equal(exposureFor(0), 1, 'no measurement means no correction')
+  assert.equal(exposureFor(MID_TARGET), 1, 'a correctly exposed feed is left alone')
+  assert.ok(exposureFor(0.06) < 1, 'a feed the phone could not lift darkens the object')
+  assert.ok(exposureFor(0.40) > 1, 'a bright feed lifts the object with it')
+  let last = -1
+  for (let m = 0.01; m < 1; m += 0.01) {
+    const e = exposureFor(m)
+    assert.ok(e >= last - 1e-9, 'brighter feed never means less exposure')
+    assert.ok(e >= MIN && e <= MAX, `stays bounded, got ${e}`)
+    last = e
+  }
+
+  // the roll-off has to reproduce the old fixed curve when the feed's white
+  // sits where that curve assumed it did, or this is a behaviour change in
+  // disguise rather than a measurement
+  assert.ok(Math.abs(rollFor(0.89) - 0.5) < 0.02, `0.89 white reproduces the old roll, got ${rollFor(0.89)}`)
+  assert.equal(rollFor(1), 0, 'a feed reaching full white needs no roll-off')
+  assert.ok(rollFor(0.4) <= 2, 'a very flat feed cannot drive the roll past its clamp')
+  let prev = Infinity
+  for (let w = 0.3; w <= 1; w += 0.01) {
+    const r = rollFor(w)
+    assert.ok(r <= prev + 1e-9, 'a brighter white always needs less roll-off')
+    prev = r
+  }
+
+  // the plate curve with a measured black must still pin white and stay ordered
+  const curve = (v, black, roll) => {
+    const c = black + v * (1 - black)
+    return c / (1 + roll * Math.max(c - 0.75, 0))
+  }
+  for (const black of [0, 0.03, 0.09]) {
+    assert.ok(Math.abs(curve(0, black, 0.5) - black) < 1e-9, 'black lands on the measured floor')
+    let before = -1
+    for (let v = 0; v <= 1.0001; v += 0.05) {
+      const out = curve(v, black, 0.5)
+      assert.ok(out > before, 'curve stays monotonic at any measured black')
+      before = out
+    }
+  }
+}
+
+console.log('measured plate exposure ok')

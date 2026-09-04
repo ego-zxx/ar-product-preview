@@ -8,6 +8,7 @@ import {
   newGesture, type Draft, type Gesture, type Placed,
 } from './ARScene'
 import { Halation } from './halation'
+import { CameraExposure } from './exposure'
 import { useAccess } from './access'
 import { fetchProducts, type Product } from './products'
 import { ProductPage } from './ProductPage'
@@ -31,6 +32,9 @@ const store = createXRStore({
       'anchors',
       'plane-detection',
       'light-estimation',
+      // the camera image itself, so exposure can be matched to the feed rather
+      // than guessed from the light estimate alone
+      'camera-access',
       'depth-sensing',
       'dom-overlay',
     ],
@@ -391,6 +395,7 @@ export function App() {
         <XR store={store}>
           <Env />
           <Halation />
+          <CameraExposure />
           <PlaneOcclusion />
           <DepthOcclusion />
           <EstimatedLighting onActive={setLitByRoom} />
@@ -470,7 +475,8 @@ occlusion ${diag.occlusion ? 'on' : 'off'}
 framebuffer ${diag.fb}
 anisotropy ${diag.anisotropy}
 room light ${diag.ambient} · exposure ${diag.exposure}
-halation ${diag.halation ? 'on' : 'off'}`}
+halation ${diag.halation ? 'on' : 'off'}
+feed ${diag.feed}`}
               </div>
             )}
             <div className="ar-status">

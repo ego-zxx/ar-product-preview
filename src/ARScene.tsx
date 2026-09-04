@@ -16,6 +16,8 @@ import type { Product } from './products'
 import { Model, groundingOffset, objectBounds } from './Model'
 import { shadowTint } from './materials'
 import { halationStatus } from './halation'
+import { exposureFor, plate, rollFor } from './exposure'
+import { grainUniforms } from './grain'
 import { occlusionStatus, patchForOcclusion, updateOcclusion } from './occlusion'
 
 const UP = new Vector3(0, 1, 0)
@@ -161,6 +163,8 @@ export type Diag = {
   /** room brightness from the light estimate, and the exposure trim it drives */
   ambient: number
   exposure: number
+  /** what the camera feed actually measured, when raw camera access is granted */
+  feed: string
   /** whether the halation pass is running, or gave up on frame rate */
   halation: boolean
 }
@@ -195,6 +199,9 @@ export function DiagnosticsProbe({ lit, onSample }: { lit: boolean; onSample: (d
 
     const ambient = Number(roomLight.ambient.toFixed(2))
     const halation = halationStatus.on
+    const feed = plate.measured
+      ? `blk ${plate.black.toFixed(3)} mid ${plate.mid.toFixed(3)} wht ${plate.white.toFixed(2)}`
+      : 'not granted'
     const exposure = Number(gl.toneMappingExposure.toFixed(2))
     let anisotropy = 0
     let shadowFrom = 'none'
@@ -206,7 +213,7 @@ export function DiagnosticsProbe({ lit, onSample }: { lit: boolean; onSample: (d
         shadowFrom = l.parent?.name === 'room-light' ? 'room' : 'fixed'
       }
     })
-    onSample({ fps, lit, occlusion: occlusionStatus().enabled, fb, anisotropy, shadowFrom, ambient, exposure, halation })
+    onSample({ fps, lit, occlusion: occlusionStatus().enabled, fb, anisotropy, shadowFrom, ambient, exposure, halation, feed })
   })
   return null
 }
@@ -253,13 +260,16 @@ export function EstimatedLighting({ onActive }: { onActive: (on: boolean) => voi
     if (peak > 0) shadowTint.setRGB(dc.x / peak, dc.y / peak, dc.z / peak).multiplyScalar(0.14)
     roomLight.ambient = 0.2126 * dc.x + 0.7152 * dc.y + 0.0722 * dc.z
     fitShadow(light.directionalLight)
-    level.current = exposure.current.update(
-      level.current,
-      exposureTrim(roomLight.ambient),
-      dt * 1000,
-      1,
-    )
+    // Prefer the measured feed over the estimate. The estimate says how bright
+    // the room is; the measurement says how bright the phone decided to make it
+    // look, and it is the second one the object has to sit inside.
+    const goal = plate.measured ? exposureFor(plate.mid) : exposureTrim(roomLight.ambient)
+    level.current = exposure.current.update(level.current, goal, dt * 1000, 1)
     gl.toneMappingExposure = level.current
+    if (plate.measured) {
+      grainUniforms.uPlateBlack.value = Math.min(0.12, plate.black)
+      grainUniforms.uPlateRoll.value = rollFor(plate.white)
+    }
   })
   useEffect(() => {
     const xrLight = new XREstimatedLight(gl, true)
