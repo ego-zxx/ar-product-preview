@@ -735,3 +735,35 @@ console.log('measured plate exposure ok')
 }
 
 console.log('next item swap ok')
+
+// usdz.ts Quick Look banner: iOS has no DOM overlay, so the banner fragment is
+// the whole of the next-item control. Malformed encoding means no banner and no
+// way out of AR but backwards, so the encoding is the thing to pin down.
+{
+  const withBanner = (url, action, title, subtitle) =>
+    `${url}#callToAction=${encodeURIComponent(action)}` +
+    `&checkoutTitle=${encodeURIComponent(title)}` +
+    `&checkoutSubtitle=${encodeURIComponent(subtitle)}`
+
+  const href = withBanner('blob:https://x/abc', 'Next item', 'Margherita, 12 inch', '£12')
+  assert.ok(href.startsWith('blob:https://x/abc#'), 'the fragment rides on the model URL')
+  assert.ok(href.includes('callToAction=Next%20item'), 'the action label is percent-encoded')
+  // a comma and a currency symbol in a dish name must not break the fragment
+  assert.ok(href.includes('checkoutTitle=Margherita%2C%2012%20inch'), 'the title survives punctuation')
+  assert.ok(href.includes('checkoutSubtitle=%C2%A312'), 'a currency symbol survives')
+  assert.equal(href.split('#').length, 2, 'exactly one fragment')
+
+  // the params have to stay separable after encoding, or Quick Look reads one
+  // giant callToAction and shows no title
+  const params = new URLSearchParams(href.split('#')[1])
+  assert.equal(params.get('callToAction'), 'Next item')
+  assert.equal(params.get('checkoutTitle'), 'Margherita, 12 inch')
+  assert.equal(params.get('checkoutSubtitle'), '£12')
+
+  // an ampersand in a name is the case that would silently inject a parameter
+  const risky = withBanner('blob:x', 'Next item', 'Fish & Chips', 'Mains')
+  assert.equal(new URLSearchParams(risky.split('#')[1]).get('checkoutTitle'), 'Fish & Chips')
+  assert.equal(new URLSearchParams(risky.split('#')[1]).get('callToAction'), 'Next item')
+}
+
+console.log('quick look banner ok')

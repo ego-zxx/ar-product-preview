@@ -266,6 +266,16 @@ export function App() {
   const routed = route.startsWith('#/product/')
     ? products.find((p) => p.id === route.slice('#/product/'.length))
     : null
+  /*
+   * The item after this one, for Quick Look's banner. iOS AR is a system screen
+   * with no room for our overlay, so where Android gets an arrow, iOS gets the
+   * one banner Apple allows — and it needs to know where "next" goes.
+   */
+  const routedNext = useMemo(() => {
+    if (!routed || products.length < 2) return null
+    const at = products.findIndex((p) => p.id === routed.id)
+    return products[(at + 1) % products.length]
+  }, [routed, products])
 
   return (
     <>
@@ -273,6 +283,10 @@ export function App() {
         <ProductPage
           product={routed}
           arSupported={supported}
+          next={routedNext}
+          onNext={() => {
+            if (routedNext) location.hash = `#/product/${routedNext.id}`
+          }}
           onBack={() => {
             location.hash = ''
           }}

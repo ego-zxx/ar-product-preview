@@ -266,6 +266,24 @@ export async function usdzUrl(product: Product): Promise<string> {
   return url
 }
 
+/**
+ * Quick Look's one interactive surface.
+ *
+ * iOS AR is a system screen: our DOM overlay, and with it the next-item arrow
+ * Android gets, does not exist there and cannot. The single control Apple
+ * allows is a banner along the bottom, configured through the fragment on the
+ * model's own URL, and a tap on it arrives back on the launching anchor as a
+ * `message` event. That banner is therefore both the label naming the dish and
+ * the only way to step a menu without leaving AR.
+ */
+export const withBanner = (url: string, action: string, title: string, subtitle: string) =>
+  `${url}#callToAction=${encodeURIComponent(action)}` +
+  `&checkoutTitle=${encodeURIComponent(title)}` +
+  `&checkoutSubtitle=${encodeURIComponent(subtitle)}`
+
+/** What Quick Look posts back to the anchor when the banner is tapped. */
+export const QUICK_LOOK_TAP = '_apple_ar_quicklook_button_tapped'
+
 /** Real-world size in metres, for the caveat shown next to the AR button. */
 export const realSize = (min: Vector3, max: Vector3, scale: number) =>
   new Vector3().subVectors(max, min).multiplyScalar(scale)

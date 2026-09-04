@@ -3,7 +3,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { Box3, PMREMGenerator, Vector3, type Group, type PerspectiveCamera } from 'three'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { Model } from './Model'
-import { supportsQuickLook, usdzUrl } from './usdz'
+import { supportsQuickLook, usdzUrl, withBanner, QUICK_LOOK_TAP } from './usdz'
 import type { Product } from './products'
 
 /** Studio lighting for the non-AR preview — no camera feed to match here. */
@@ -136,19 +136,49 @@ const PITCH_MAX = 1.25
  * iOS has no WebXR at all, so it hands off to AR Quick Look.
  */
 function ViewInSpace({
-  product, arSupported, onViewInSpace,
+  product, arSupported, onViewInSpace, next, onNext,
 }: {
   product: Product
   arSupported: boolean | null
   onViewInSpace: () => void
+  next: Product | null
+  onNext: () => void
 }) {
   const [quickLook, setQuickLook] = useState(false)
   const [state, setState] = useState<'idle' | 'preparing' | 'failed'>('idle')
   const anchor = useRef<HTMLAnchorElement>(null)
+  /*
+   * The next item's USDZ, converted ahead of time. Quick Look can only be
+   * relaunched from inside the tap that dismissed it, and converting a model
+   * takes seconds, so awaiting one there would lose the gesture and strand the
+   * user on this page — which is the going-back this is meant to avoid.
+   */
+  const readyNext = useRef<string | null>(null)
 
   useEffect(() => {
     setQuickLook(supportsQuickLook())
   }, [])
+
+  useEffect(() => {
+    readyNext.current = null
+  }, [next?.id])
+
+  // Stepping the menu from inside Quick Look: its banner is the only control
+  // Apple gives us, and this is the tap arriving back from it.
+  useEffect(() => {
+    const a = anchor.current
+    if (!a) return
+    const onMessage = (event: Event) => {
+      if ((event as MessageEvent).data !== QUICK_LOOK_TAP) return
+      const href = readyNext.current
+      if (!href || !next) return
+      a.href = withBanner(href, 'Next item', next.name, next.price || next.category)
+      a.click()
+      onNext()
+    }
+    a.addEventListener('message', onMessage)
+    return () => a.removeEventListener('message', onMessage)
+  }, [next, onNext])
 
   const convertible = !product.url.startsWith('builtin:')
 
@@ -168,9 +198,14 @@ function ViewInSpace({
         const href = await usdzUrl(product)
         const a = anchor.current
         if (!a) return
-        a.href = href
+        a.href = next
+          ? withBanner(href, 'Next item', product.name, product.price || product.category)
+          : href
         a.click()
         setState('idle')
+        // convert the next one while this one is being looked at, so its tap
+        // has a URL waiting rather than a promise
+        if (next) usdzUrl(next).then((u) => { readyNext.current = u }).catch(() => {})
       } catch {
         setState('failed')
       }
@@ -212,11 +247,16 @@ export function ProductPage({
   onBack,
   onViewInSpace,
   arSupported,
+  next,
+  onNext,
 }: {
   product: Product
   onBack: () => void
   onViewInSpace: () => void
   arSupported: boolean | null
+  /** the item Quick Look's banner steps to; null when there is only one */
+  next: Product | null
+  onNext: () => void
 }) {
   const ctrl = useRef<Orbit>({
     yaw: 0,
@@ -331,7 +371,13 @@ export function ProductPage({
       )}
 
       <div style={{ marginTop: 26 }}>
-        <ViewInSpace product={product} arSupported={arSupported} onViewInSpace={onViewInSpace} />
+        <ViewInSpace
+          product={product}
+          arSupported={arSupported}
+          onViewInSpace={onViewInSpace}
+          next={next}
+          onNext={onNext}
+        />
       </div>
 
       {(product.dimensions || product.specs?.length) && (

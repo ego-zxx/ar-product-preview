@@ -248,6 +248,16 @@ reading its source rather than guessing:
   adds alpha as well as colour, so it spills onto the real room rather than
   stopping at the object's edge. It disables itself below `MIN_FPS`;
   `?nohalation=1` turns it off outright and `?debug=1` reports whether it ran.
+- **Stepping the menu on iOS** cannot use that arrow, or any control of ours:
+  Quick Look is a system screen with no DOM overlay. The single interactive
+  surface Apple allows is a banner along the bottom, configured through the
+  fragment on the model's own URL (`withBanner` in `src/usdz.ts`), whose tap
+  arrives back on the launching anchor as a `message` event. So iOS gets that
+  banner, naming the dish and offering "Next item". Tapping it dismisses Quick
+  Look and relaunches it on the next model, which blinks — unavoidable, since
+  the viewer shows one USDZ. The next model is converted while the current one
+  is on screen, because the relaunch has to happen inside the tap and awaiting
+  a conversion there would lose the gesture.
 - **Stepping the menu** without leaving AR: the arrow on the right edge swaps
   to the next item, wrapping, and anything already placed keeps its pose and
   changes model. Comparing dishes is only useful in the same spot on the same
