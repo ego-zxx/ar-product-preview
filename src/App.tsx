@@ -136,6 +136,22 @@ export function App() {
     [draft, selected, objects.length],
   )
 
+  /*
+   * Step to the next item without leaving AR, so a menu can be browsed in
+   * place. Anything already placed keeps its pose and swaps model, which is
+   * the point: the comparison people actually want is the same spot on the
+   * same table, not the same dish in two different rooms. Wraps, so one arrow
+   * reaches every item.
+   */
+  const nextProduct = useCallback(() => {
+    if (products.length < 2) return
+    const at = products.findIndex((p) => p.id === productId)
+    const next = products[(at + 1) % products.length]
+    setProductId(next.id)
+    setDraft((d) => (d ? { product: next } : d))
+    setObjects((placed) => placed.map((o) => ({ ...o, product: next })))
+  }, [products, productId])
+
   // Read the draft through a ref: React may re-run or discard a state updater,
   // so committing must never happen *inside* one.
   const draftLive = useRef<Draft | null>(null)
@@ -439,6 +455,19 @@ export function App() {
                 Being a DOM element it also stops taps reaching the XR select. */}
             {draft && <div className="ar-rotate" {...gestureHandlers} />}
 
+            {products.length > 1 && (
+              <button
+                className="ar-icon ar-next"
+                aria-label="Next item"
+                onPointerDown={muteSelect}
+                onClick={nextProduct}
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M9.3 4.7a1 1 0 0 0 0 1.4l5.9 5.9-5.9 5.9a1 1 0 1 0 1.4 1.4l6.6-6.6a1 1 0 0 0 0-1.4L10.7 4.7a1 1 0 0 0-1.4 0Z" />
+                </svg>
+              </button>
+            )}
+
             <div className="ar-top">
               <button
                 className="ar-icon"
@@ -489,7 +518,10 @@ feed ${diag.feed}`}
                       ? 'Selected'
                       : objects.length === 0
                         ? `Tap a surface to place ${selected?.name ?? ''}`
-                        : 'Tap it to move or remove'}
+                        : // once something is placed the dish's name is the
+                          // useful thing to show, not the tap hint it replaces:
+                          // stepping through a menu is unreadable without it
+                          (selected?.name ?? 'Tap it to move or remove')}
               </span>
             </div>
 

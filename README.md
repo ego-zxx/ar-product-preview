@@ -248,6 +248,11 @@ reading its source rather than guessing:
   adds alpha as well as colour, so it spills onto the real room rather than
   stopping at the object's edge. It disables itself below `MIN_FPS`;
   `?nohalation=1` turns it off outright and `?debug=1` reports whether it ran.
+- **Stepping the menu** without leaving AR: the arrow on the right edge swaps
+  to the next item, wrapping, and anything already placed keeps its pose and
+  changes model. Comparing dishes is only useful in the same spot on the same
+  table, so the pose is what must survive, not the object. The status line
+  names the dish once one is standing there.
 - **Placement** turns the product's front toward the camera.
 - **iOS renders none of the above.** Quick Look draws the USDZ with its own
   renderer, so the camera matching, exposure and shadow work apply to Android

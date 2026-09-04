@@ -236,6 +236,18 @@ body {
   transition: transform .3s cubic-bezier(.34,1.3,.5,1), opacity .3s;
 }
 .ar-icon:active { transform: scale(.92); opacity: .7; }
+
+/* Next item, on the right edge under the thumb, so a menu can be stepped
+   through without leaving the session. Sits above the rotate surface, which
+   covers the screen whenever a draft is being positioned. */
+.ar-next {
+  position: fixed;
+  right: max(14px, env(safe-area-inset-right));
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 3;
+}
+.ar-next:active { transform: translateY(-50%) scale(.92); opacity: .7; }
 .ar-icon svg { width: 21px; height: 21px; fill: var(--label); }
 
 /* a single centred status line: sentence case, because uppercase tracking

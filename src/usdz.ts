@@ -70,9 +70,12 @@ const cache = new Map<string, string>()
  * mid-tones where the difference actually shows come up.
  *
  * ponytail: a calibration constant, not a measurement — Apple does not publish
- * the curve. The first attempt at 1.08 moved the Double Stack's bun texture
- * from a mean of 128.4 to 133.8, four per cent, which is below the threshold
- * of noticing and read as no change at all. 1.3 lifts it about seventeen.
+ * the curve, and none of the Android work can help here because Quick Look
+ * runs none of our code. Measured on the Double Stack's bun texture, whose
+ * source mean is 128.4: 1.08 gave 133.8 and read as no change at all, 1.3 gave
+ * 150.4 and still read dark, 1.5 gives 161.4. Raised a step at a time because
+ * overshooting a lift on albedo washes a model out and cannot be undone by the
+ * renderer afterwards.
  *
  * `?ioslift=1.5` overrides it, so the right value can be found on the device in
  * one sitting instead of one round trip per guess. Clamped to sane bounds.

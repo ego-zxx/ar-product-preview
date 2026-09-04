@@ -594,7 +594,7 @@ console.log('halation bright pass ok')
 // is the base colour. The curve must lift the middle without ever clipping,
 // which a flat gain would do to anything already near white.
 {
-  const LIFT = 1.3
+  const LIFT = 1.5
   const lut = Array.from({ length: 256 }, (_, i) => Math.round(255 * (i / 255) ** (1 / LIFT)))
 
   assert.equal(lut[0], 0, 'black stays black')
@@ -605,6 +605,8 @@ console.log('halation bright pass ok')
   assert.ok(lut[128] - 128 > 15, `the lift is perceptible, got +${lut[128] - 128}`)
   // but a lift that reads as a relight rather than a match is equally wrong
   assert.ok(lut[128] - 128 < 45, `the lift is still a match, got +${lut[128] - 128}`)
+  // and the ends still cannot move, however far the lift is pushed
+  assert.equal(lut[255], 255, 'white is pinned at any lift')
 
   let last = -1
   for (const v of lut) {
@@ -708,3 +710,28 @@ console.log('quick look baked roughness ok')
 }
 
 console.log('measured plate exposure ok')
+
+// App.tsx next-item arrow: stepping through the menu in AR must swap the model
+// and nothing else. The pose is the whole value of comparing in place.
+{
+  const products = [{ id: 'a' }, { id: 'b' }, { id: 'c' }]
+  const step = (currentId) => {
+    const at = products.findIndex((p) => p.id === currentId)
+    return products[(at + 1) % products.length]
+  }
+  assert.equal(step('a').id, 'b', 'advances')
+  assert.equal(step('c').id, 'a', 'wraps, so one arrow reaches every item')
+  // an id no longer in the catalogue must not strand the arrow: findIndex gives
+  // -1, and -1 + 1 is 0, so it lands on the first item rather than undefined
+  assert.equal(step('gone').id, 'a', 'an unknown current item falls to the first')
+
+  const placed = { id: 7, product: products[0], yaw: 1.23, anchor: 'anchor', matrix: 'matrix' }
+  const swapped = { ...placed, product: products[1] }
+  assert.equal(swapped.product.id, 'b', 'the model changes')
+  assert.equal(swapped.yaw, placed.yaw, 'the rotation survives the swap')
+  assert.equal(swapped.anchor, placed.anchor, 'the anchor survives the swap')
+  assert.equal(swapped.matrix, placed.matrix, 'the pose survives the swap')
+  assert.equal(swapped.id, placed.id, 'it stays the same placed object')
+}
+
+console.log('next item swap ok')
