@@ -45,11 +45,22 @@ const contactTexture = (() => {
   return t
 })()
 
+/*
+ * Contact darkening: the ambient occlusion right where an object meets a
+ * surface, which no shadow map resolves because it lives inside a texel.
+ *
+ * It used to be doing a second job it is bad at. At 2.6x the footprint and 75%
+ * it read as a shadow — a fixed, non-directional one, sitting under a real
+ * shadow that moves with the room's light, which is physically incoherent and
+ * darkened the contact twice. Since the shadow frustum was fitted to the object
+ * the real shadow resolves at about a fifth of a millimetre per texel and can
+ * carry that on its own, so this is back to the narrow band it is actually for.
+ */
 function ContactShade({ radius }: { radius: number }) {
   return (
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.0008, 0]} renderOrder={2}>
-      <planeGeometry args={[radius * 2.6, radius * 2.6]} />
-      <meshBasicMaterial map={contactTexture} transparent opacity={0.75} depthWrite={false} />
+      <planeGeometry args={[radius * 1.5, radius * 1.5]} />
+      <meshBasicMaterial map={contactTexture} transparent opacity={0.3} depthWrite={false} />
     </mesh>
   )
 }

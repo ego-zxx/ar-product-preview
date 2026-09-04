@@ -169,6 +169,8 @@ export type Diag = {
   exposure: number
   /** what the camera feed actually measured, when raw camera access is granted */
   feed: string
+  /** the per-material camera matching, which is Android-only and easy to doubt */
+  match: string
   /** whether the halation pass is running, or gave up on frame rate */
   halation: boolean
 }
@@ -203,6 +205,11 @@ export function DiagnosticsProbe({ lit, onSample }: { lit: boolean; onSample: (d
 
     const ambient = Number(roomLight.ambient.toFixed(2))
     const halation = halationStatus.on
+    const g = grainUniforms
+    const match =
+      g.uPlate.value > 0
+        ? `plate ✓ vignette ${g.uVignette.value.toFixed(2)} feather ${g.uEdgeFeather.value.toFixed(1)} grain ${g.uGrainAmount.value.toFixed(3)}`
+        : 'off (nothing placed)'
     const feed = plate.measured
       ? `blk ${plate.black.toFixed(3)} mid ${plate.mid.toFixed(3)} wht ${plate.white.toFixed(2)}`
       : 'not granted'
@@ -217,7 +224,7 @@ export function DiagnosticsProbe({ lit, onSample }: { lit: boolean; onSample: (d
         shadowFrom = l.parent?.name === 'room-light' ? 'room' : 'fixed'
       }
     })
-    onSample({ fps, lit, occlusion: occlusionStatus().enabled, fb, anisotropy, shadowFrom, ambient, exposure, halation, feed })
+    onSample({ fps, lit, occlusion: occlusionStatus().enabled, fb, anisotropy, shadowFrom, ambient, exposure, halation, feed, match })
   })
   return null
 }

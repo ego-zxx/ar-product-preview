@@ -528,7 +528,8 @@ framebuffer ${diag.fb}
 anisotropy ${diag.anisotropy}
 room light ${diag.ambient} · exposure ${diag.exposure}
 halation ${diag.halation ? 'on' : 'off'}
-feed ${diag.feed}`}
+feed ${diag.feed}
+match ${diag.match}`}
               </div>
             )}
             <div className="ar-status">
