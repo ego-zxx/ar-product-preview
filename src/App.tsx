@@ -11,6 +11,7 @@ import { Halation } from './halation'
 import { CameraExposure } from './exposure'
 import { useAccess } from './access'
 import { fetchProducts, type Product } from './products'
+import { supportsQuickLook } from './usdz'
 import { ProductPage } from './ProductPage'
 
 const overlayRoot = document.getElementById('ar-overlay')!
@@ -106,6 +107,9 @@ export function App() {
       removeEventListener('unhandledrejection', onRej)
     }
   }, [])
+
+  const [quickLook, setQuickLook] = useState(false)
+  useEffect(() => setQuickLook(supportsQuickLook()), [])
 
   const selected = useMemo(
     () => products.find((p) => p.id === productId) ?? null,
@@ -368,17 +372,22 @@ export function App() {
                 <div className="group">
                   <div className="row">
                     <div className="row-main">
-                      <div className="row-title">AR not available here</div>
+                      <div className="row-title">
+                        {quickLook ? 'AR is on the product page here' : 'AR not available here'}
+                      </div>
+                      {/* iOS has no WebXR, so this panel used to send iPhones
+                          to a marker demo that no longer exists — a dead link
+                          on the one platform that does have AR, just by
+                          another route. */}
                       <div className="row-sub">
                         {supported === null
                           ? 'Checking…'
-                          : 'Open in Chrome on Android for full AR, or try the iPhone marker demo.'}
+                          : quickLook
+                            ? 'Open a product and tap View in your space.'
+                            : 'Open in Chrome on Android for full AR.'}
                       </div>
                     </div>
                   </div>
-                  <a className="row" href="/ios-spike.html" style={{ color: 'var(--blue)' }}>
-                    iPhone marker demo
-                  </a>
                 </div>
               )}
             </div>
