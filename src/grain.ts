@@ -59,13 +59,6 @@ export const EDGE_ALPHA = 0.65
  */
 export const EDGE_BAND_MAX = 0.06
 
-/** Mirror of the shader, for the test: 1 at the centre, EDGE_ALPHA at the rim. */
-export const featherAt = (ndv: number, texelWidth: number, pixels: number) => {
-  if (pixels <= 0) return 1
-  const band = Math.min(texelWidth, EDGE_BAND_MAX) * pixels
-  const t = Math.min(1, Math.max(0, ndv / Math.max(band, 1e-6)))
-  return EDGE_ALPHA + (1 - EDGE_ALPHA) * t * t * (3 - 2 * t)
-}
 
 /**
  * Plate response. Compositors match a CG element to footage by lifting its

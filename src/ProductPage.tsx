@@ -180,8 +180,6 @@ function ViewInSpace({
     return () => a.removeEventListener('message', onMessage)
   }, [next, onNext])
 
-  const convertible = !product.url.startsWith('builtin:')
-
   // Android (and anything else with WebXR): render in-page.
   if (arSupported) {
     return (
@@ -191,7 +189,7 @@ function ViewInSpace({
     )
   }
 
-  if (quickLook && convertible) {
+  if (quickLook) {
     const open = async () => {
       setState('preparing')
       try {

@@ -6,7 +6,6 @@ import {
 import { EDGE_FEATHER_AR, grainUniforms, patchForGrain, stepGrain, VIGNETTE_AR } from './grain'
 import { improveMaterial, shadowTint } from './materials'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
-import { CoffeeCup, Faucet } from './models'
 import type { Product } from './products'
 
 /**
@@ -171,15 +170,9 @@ export function Model({ product, grounded = true }: { product: Product; grounded
   return (
     <group ref={ref}>
       {grounded && <ShadowCatcher />}
-      {product.url === 'builtin:faucet' ? (
-        <Faucet />
-      ) : product.url === 'builtin:cup' ? (
-        <CoffeeCup />
-      ) : (
-        <Suspense fallback={null}>
-          <GltfModel url={product.url} scale={product.scale} grounded={grounded} />
-        </Suspense>
-      )}
+      <Suspense fallback={null}>
+        <GltfModel url={product.url} scale={product.scale} grounded={grounded} />
+      </Suspense>
     </group>
   )
 }

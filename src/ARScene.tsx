@@ -11,14 +11,18 @@ import {
   XRSpace, useXR, useXRHitTest, useXRInputSourceEvent, useXRPlaneGeometry, useXRPlanes,
 } from '@react-three/xr'
 import { Damper } from './damper'
-import { CoffeeCup, Faucet } from './models'
 import type { Product } from './products'
 import { Model, groundingOffset, objectBounds } from './Model'
 import { shadowTint } from './materials'
 import { halationStatus } from './halation'
 import { exposureFor, plate, rollFor } from './exposure'
 import { grainUniforms } from './grain'
-import { occlusionStatus, patchForOcclusion, updateOcclusion } from './occlusion'
+import {
+  depthOcclusionEnabled,
+  occlusionStatus,
+  patchForOcclusion,
+  updateOcclusion,
+} from './occlusion'
 
 const UP = new Vector3(0, 1, 0)
 
@@ -440,7 +444,10 @@ export function PlaneOcclusion() {
 export function DepthOcclusion() {
   const { gl, scene } = useThree()
   useFrame((_s, _d, frame) => {
-    if (!frame) return
+    // Off by default, and the check belongs before the pose query rather than
+    // after it: getViewerPose is not free, and paying for it every frame of
+    // every session to then discard the result is the kind of cost that hides.
+    if (!depthOcclusionEnabled || !frame) return
     const ref = gl.xr.getReferenceSpace()
     const pose = ref ? frame.getViewerPose(ref) : null
     const view = pose?.views[0]
