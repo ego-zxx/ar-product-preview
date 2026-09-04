@@ -767,3 +767,34 @@ console.log('next item swap ok')
 }
 
 console.log('quick look banner ok')
+
+// usdz.ts preferredIblVersion: the one piece of iOS AR lighting that is ours to
+// set. Apple picks between two lighting environments from this key, and with no
+// key at all the choice is a guess made from a creation date the file lacks.
+{
+  const header = '#usda 1.0\n(\n\tcustomLayerData = {\n\t\tstring creator = "Three.js USDZExporter"\n\t}\n\tdefaultPrim = "Root"\n)\n'
+  const patch = (text) =>
+    text.includes('preferredIblVersion')
+      ? text
+      : text.replace(
+          'customLayerData = {',
+          'customLayerData = {\n\t\tdictionary Apple = {\n\t\t\tint preferredIblVersion = 2\n\t\t}',
+        )
+
+  const out = patch(header)
+  assert.ok(out.includes('dictionary Apple = {'), 'the Apple dictionary is added')
+  assert.ok(out.includes('int preferredIblVersion = 2'), 'version 2 is the brighter environment')
+  assert.ok(out.includes('string creator'), 'the exporter\'s own metadata survives')
+  assert.ok(out.startsWith('#usda 1.0'), 'the layer identifier stays first, or USD will not open it')
+  // braces have to stay balanced or the whole layer fails to parse and the
+  // model does not appear at all, which is far worse than being dark
+  assert.equal((out.match(/{/g) || []).length, (out.match(/}/g) || []).length, 'braces balance')
+  // re-running must not nest a second dictionary
+  assert.equal(patch(out), out, 'patching is idempotent')
+
+  // a header without the anchor must be left exactly alone rather than mangled
+  const alien = '#usda 1.0\n(\n\tdefaultPrim = "Root"\n)\n'
+  assert.equal(patch(alien), alien, 'an unfamiliar header is left untouched')
+}
+
+console.log('quick look ibl version ok')

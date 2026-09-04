@@ -264,6 +264,15 @@ reading its source rather than guessing:
   table, so the pose is what must survive, not the object. The status line
   names the dish once one is standing there.
 - **Placement** turns the product's front toward the camera.
+- **iOS AR lighting has exactly one setting we control**, and it was being left
+  to chance. Apple ships two image-based lighting environments and chooses
+  between them from `preferredIblVersion` in the asset's own metadata: 1 is the
+  original, 2 is the brighter, higher-contrast one added in iOS 16, and 0 means
+  infer it from the asset's creation date. three's exporter writes no such key,
+  so every model fell to the inference — and a file built in the browser has no
+  creation date to infer from. `withIblVersion` in `src/usdz.ts` reopens the
+  archive and writes 2 into the root layer, repacking with the 64-byte
+  alignment USDZ requires. Everything else about iOS lighting belongs to ARKit.
 - **iOS renders none of the above.** Quick Look draws the USDZ with its own
   renderer, so the camera matching, exposure and shadow work apply to Android
   only. What the export can carry, it now does: the same metalness correction

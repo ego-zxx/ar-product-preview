@@ -14,6 +14,7 @@ import { Box3, CanvasTexture, Group, NoColorSpace, Vector3 } from 'three'
 import type { Material, Mesh, MeshStandardMaterial, Object3D, Texture } from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { USDZExporter } from 'three/addons/exporters/USDZExporter.js'
+import { unzipSync, zipSync } from 'three/addons/libs/fflate.module.js'
 import { groundingOffset } from './Model'
 import { correctMetalness, ROUGHNESS_VARIATION } from './materials'
 import type { Product } from './products'
@@ -236,6 +237,56 @@ function prepareForQuickLook(root: Object3D) {
   })
 }
 
+/**
+ * Tell Quick Look which lighting environment to render with.
+ *
+ * This is the one piece of AR lighting on iOS that is ours to set, and it was
+ * being left to chance. Apple ships two image-based lighting environments and
+ * picks between them from `preferredIblVersion` in the asset's own metadata:
+ * 1 is the original, 2 is the brighter, higher-contrast one added in iOS 16,
+ * and 0 means guess from the asset's creation date. three's exporter writes no
+ * such key, so every model we generated fell to the guess — and a file built in
+ * the browser has no creation date to guess from, which is a plausible reason
+ * these have read dark on iOS however far the material was lifted.
+ *
+ * The exporter gives no hook for it, so the archive is reopened and its root
+ * layer patched. Repacking has to reproduce the 64-byte alignment USDZ
+ * requires, which is three's own loop, copied deliberately including its
+ * quirks so the file stays byte-compatible with what Quick Look already
+ * accepts from this exporter.
+ */
+const IBL_VERSION = 2
+
+export function withIblVersion(archive: Uint8Array<ArrayBuffer>): Uint8Array<ArrayBuffer> {
+  const files: Record<string, Uint8Array> = unzipSync(archive)
+  const root = Object.keys(files).find((name) => name.endsWith('.usda'))
+  if (!root) return archive
+
+  const text = new TextDecoder().decode(files[root])
+  if (text.includes('preferredIblVersion')) return archive
+  const patched = text.replace(
+    'customLayerData = {',
+    'customLayerData = {\n\t\tdictionary Apple = {\n\t\t\tint preferredIblVersion = ' +
+      `${IBL_VERSION}\n\t\t}`,
+  )
+  // nothing to hook onto: leave the archive exactly as the exporter built it
+  if (patched === text) return archive
+  files[root] = new TextEncoder().encode(patched)
+
+  const aligned: Record<string, Uint8Array | [Uint8Array, { extra: Record<number, Uint8Array> }]> =
+    {}
+  let offset = 0
+  for (const name of Object.keys(files)) {
+    const file = files[name]
+    offset += 34 + name.length
+    const remainder = offset & 63
+    aligned[name] =
+      remainder !== 4 ? [file, { extra: { 12345: new Uint8Array(64 - remainder) } }] : file
+    offset = file.length
+  }
+  return zipSync(aligned, { level: 0 }) as Uint8Array<ArrayBuffer>
+}
+
 export async function usdzUrl(product: Product): Promise<string> {
   const hit = cache.get(product.id)
   if (hit) return hit
@@ -260,8 +311,9 @@ export async function usdzUrl(product: Product): Promise<string> {
   // Measured on the Double Stack: 9.7MB against 16.2MB, and the export takes
   // the same time either way, since PNG encoding dominates. Base colour is
   // untouched at 1024 — only maps authored larger gain anything.
-  const arraybuffer = await new USDZExporter().parseAsync(holder, { maxTextureSize: 2048 })
-  const url = URL.createObjectURL(new Blob([arraybuffer], { type: 'model/vnd.usdz+zip' }))
+  const exported = await new USDZExporter().parseAsync(holder, { maxTextureSize: 2048 })
+  const archive = withIblVersion(exported as unknown as Uint8Array<ArrayBuffer>)
+  const url = URL.createObjectURL(new Blob([archive], { type: 'model/vnd.usdz+zip' }))
   cache.set(product.id, url)
   return url
 }
