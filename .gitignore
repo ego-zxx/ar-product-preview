@@ -14,3 +14,6 @@ certs/
 # vercel CLI project link + the token it drops locally
 .vercel
 .env.local
+
+# local test credentials, never committed
+.claude/dev-creds.md
