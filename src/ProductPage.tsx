@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useMemo } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { Box3, PMREMGenerator, Vector3, type Group, type PerspectiveCamera } from 'three'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { Model } from './Model'
-import { supportsQuickLook, usdzUrl } from './usdz'
+import { supportsQuickLook, usdzUrl, withBanner, QUICK_LOOK_TAP } from './usdz'
 import type { Product } from './products'
 
 /** Studio lighting for the non-AR preview — no camera feed to match here. */
@@ -136,19 +136,45 @@ const PITCH_MAX = 1.25
  * iOS has no WebXR at all, so it hands off to AR Quick Look.
  */
 function ViewInSpace({
-  product, arSupported, onViewInSpace,
+  product, arSupported, onViewInSpace, next, onPick,
 }: {
   product: Product
   arSupported: boolean | null
   onViewInSpace: () => void
+  /** the dish Quick Look's banner announces; null when there is only one */
+  next: Product | null
+  onPick: (p: Product) => void
 }) {
   const [quickLook, setQuickLook] = useState(false)
   const [state, setState] = useState<'idle' | 'preparing' | 'failed'>('idle')
+  /** set when Quick Look reports its banner was tapped, cleared on the answer */
+  const [pending, setPending] = useState<Product | null>(null)
   const anchor = useRef<HTMLAnchorElement>(null)
 
   useEffect(() => {
     setQuickLook(supportsQuickLook())
   }, [])
+
+  /*
+   * The banner tap comes back here, and cannot open anything by itself.
+   *
+   * Quick Look's banner is display-only, so the tap arrives as a message on
+   * the launching anchor rather than as anything that acts. Our page is not
+   * the one that was touched, so Safari holds no user activation for it and
+   * refuses to reopen AR — that refusal is the whole reason a second tap
+   * exists. Recording which dish was asked for is all that can be done here;
+   * the prompt below turns it into the touch Safari wants.
+   */
+  useEffect(() => {
+    const a = anchor.current
+    if (!a || !next) return
+    const onMessage = (event: Event) => {
+      if ((event as MessageEvent).data !== QUICK_LOOK_TAP) return
+      setPending(next)
+    }
+    a.addEventListener('message', onMessage)
+    return () => a.removeEventListener('message', onMessage)
+  }, [next])
 
   // Android (and anything else with WebXR): render in-page.
   if (arSupported) {
@@ -161,34 +187,66 @@ function ViewInSpace({
 
   if (quickLook) {
     /*
-     * Convert on the device rather than downloading a hosted USDZ.
+     * A hosted USDZ where there is one, converting locally only as a fallback.
      *
-     * Hosting was the only way to get Quick Look's next-item banner, since it
-     * ignores the fragment parameters on a blob: URL. But it traded a small
-     * glTF for a much larger archive — the Double Stack goes from 1.8MB to
-     * 8.2MB — and on a shared connection that download costs more than a
-     * modern iPhone spends converting. The banner also could not do the one
-     * thing it was for: Safari refuses to reopen AR from its tap, so it only
-     * ever returned to the product page.
+     * Hosting costs a bigger first download than fetching the glTF and
+     * converting here, and it buys the only thing that carries the banner:
+     * Quick Look ignores the fragment parameters on a blob. Cached immutably,
+     * so the cost lands once per dish.
      */
-    const open = async () => {
+    const launch = async (target: Product) => {
       setState('preparing')
       try {
-        const href = await usdzUrl(product)
+        const hosted = target.usdz
+        const href = hosted ?? (await usdzUrl(target))
         const a = anchor.current
         if (!a) return
-        a.href = href
+        const after = next && target.id === product.id ? next : null
+        a.href =
+          hosted && after
+            ? withBanner(href, 'Next item', target.name, target.price || target.category)
+            : href
         a.click()
         setState('idle')
+        // keep the page under AR in step, so the next banner announces the
+        // dish after this one rather than repeating
+        if (target.id !== product.id) onPick(target)
       } catch {
         setState('failed')
       }
     }
     return (
       <>
-        <button className="btn" disabled={state === 'preparing'} onClick={open}>
+        <button
+          className="btn"
+          disabled={state === 'preparing'}
+          onClick={() => launch(product)}
+        >
           {state === 'preparing' ? 'Preparing…' : 'View in your space'}
         </button>
+        {/* Returning from the banner: one tap, in this page, which is exactly
+            the gesture Safari needs before it will open AR again. */}
+        {pending && (
+          <div className="ar-resume" role="dialog" aria-label="Next item">
+            <div className="ar-resume-text">
+              <span className="ar-resume-label">Next</span>
+              {pending.name}
+            </div>
+            <button
+              className="btn"
+              onClick={() => {
+                const target = pending
+                setPending(null)
+                void launch(target)
+              }}
+            >
+              View in AR
+            </button>
+            <button className="ar-resume-dismiss" onClick={() => setPending(null)}>
+              Not now
+            </button>
+          </div>
+        )}
         {/* Safari only treats rel="ar" as a Quick Look link when it wraps an image */}
         <a ref={anchor} rel="ar" style={{ display: 'none' }} aria-hidden="true">
           <img alt="" />
@@ -232,6 +290,12 @@ export function ProductPage({
   products: Product[]
   onPick: (p: Product) => void
 }) {
+  // the dish after this one, which the AR banner announces and the prompt opens
+  const next = useMemo(() => {
+    if (products.length < 2) return null
+    const at = products.findIndex((p) => p.id === product.id)
+    return products[(at + 1) % products.length]
+  }, [products, product.id])
   const ctrl = useRef<Orbit>({
     yaw: 0,
     pitch: 0.25,
@@ -345,7 +409,13 @@ export function ProductPage({
       )}
 
       <div style={{ marginTop: 26 }}>
-        <ViewInSpace product={product} arSupported={arSupported} onViewInSpace={onViewInSpace} />
+        <ViewInSpace
+          product={product}
+          arSupported={arSupported}
+          onViewInSpace={onViewInSpace}
+          next={next}
+          onPick={onPick}
+        />
         {/*
           The menu, under the AR button.
 

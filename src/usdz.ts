@@ -28,6 +28,25 @@ export const isIOS = () =>
 export const supportsQuickLook = () =>
   isIOS() && document.createElement('a').relList?.supports?.('ar') === true
 
+/**
+ * Quick Look's banner, configured through the fragment on the model's URL.
+ *
+ * Display-only by Apple's design: links and scripts inside a custom banner do
+ * not run, and every tap anywhere on it is swallowed and reported back to the
+ * launching anchor as a `message` event. So the banner cannot itself open the
+ * next model — it announces, and the page it reports to does the opening.
+ *
+ * Ignored entirely when the model is a blob, which is why this only goes on a
+ * hosted file.
+ */
+export const withBanner = (url: string, action: string, title: string, subtitle: string) =>
+  `${url}#callToAction=${encodeURIComponent(action)}` +
+  `&checkoutTitle=${encodeURIComponent(title)}` +
+  `&checkoutSubtitle=${encodeURIComponent(subtitle)}`
+
+/** What Quick Look posts to the anchor when the banner is tapped. */
+export const QUICK_LOOK_TAP = '_apple_ar_quicklook_button_tapped'
+
 const cache = new Map<string, string>()
 
 /**

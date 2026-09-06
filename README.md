@@ -264,11 +264,16 @@ reading its source rather than guessing:
   the same spot on the same table, so the pose is what must survive, not the
   object. It replaced a single next arrow, which meant cycling six dishes to
   reach the fifth. Hidden in the clean view along with the rest of the overlay.
-  iOS has no equivalent: Quick Look is a system screen with no overlay of ours,
-  and the banner Apple does allow cannot reopen AR. The same strip therefore
-  also sits on the product page, under the AR button, which is where Quick Look
-  returns you — so switching dish on iOS is two taps rather than a trip out to
-  the catalogue and back.
+  iOS gets the nearest thing Quick Look permits. Its banner announces the next
+  dish, and a tap on it returns here — the banner is display-only, so it cannot
+  open anything itself, and our page holds no user activation when the message
+  arrives, which is why Safari refuses to reopen AR from it. The prompt that
+  appears instead carries the one tap Safari wants, so stepping the menu is
+  banner, then confirm. This needs the hosted USDZ: the fragment parameters are
+  dropped entirely on a blob, so a model converted on the phone gets no banner.
+  Hosting costs a bigger first download per dish than fetching the glTF, and it
+  is cached immutably so that lands once. The menu strip also sits on the
+  product page for anyone who dismisses the prompt.
 - **Placement** turns the product's front toward the camera.
 - **iOS AR lighting has exactly one setting we control**, and it was being left
   to chance. Apple ships two image-based lighting environments and chooses
