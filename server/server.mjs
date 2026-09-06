@@ -217,6 +217,10 @@ createServer(async (req, res) => {
       res.writeHead(200, {
         'content-type': MIME[extname(file)] ?? 'application/octet-stream',
         'content-length': buf.length,
+        // Uploads are stored under a random prefix and never rewritten, so a
+        // given URL always means the same bytes. Without this every AR launch
+        // re-downloaded the model — tens of megabytes, on a phone, each time.
+        'cache-control': 'public, max-age=31536000, immutable',
         ...CORS,
       })
       // a HEAD reply carries the headers but no body

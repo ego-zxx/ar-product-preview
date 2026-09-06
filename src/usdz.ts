@@ -148,6 +148,8 @@ function liftTexture(source: Texture): Texture | null {
   meanColour.set(source, [sumR / count, sumG / count, sumB / count])
 
   const texture = new CanvasTexture(canvas)
+  // the JPEG hint has to survive the copy, or the lifted map reverts to PNG
+  texture.userData.mimeType = source.userData.mimeType
   // CanvasTexture flips by default and glTF textures do not; the exporter
   // reads flipY to decide whether to flip again, so it has to carry over
   texture.flipY = source.flipY
@@ -283,6 +285,21 @@ function prepareForQuickLook(root: Object3D) {
           // the scalar, so the base value is already baked into the texture
         }
       }
+      /*
+       * Colour maps as JPEG, data maps left alone.
+       *
+       * The exporter writes every texture as PNG, which is lossless and
+       * enormous: the Margherita came to 37MB, and a phone downloading that
+       * over mobile data sits on a spinner far longer than converting locally
+       * ever took. Photographic colour is exactly what JPEG is for. Normal,
+       * roughness and occlusion maps are not colour — they are numbers a shader
+       * reads, and JPEG's ringing around edges shows up as visible artefacts in
+       * shading — so those stay PNG.
+       *
+       * A material that needs its alpha keeps PNG too, since JPEG has none.
+       */
+      const opaque = !m.transparent && !(m.alphaTest > 0) && !m.alphaMap
+      if (m.map && opaque) m.map.userData.mimeType = 'image/jpeg'
       if (m.aoMap) {
         const softened = softenOcclusion(m.aoMap)
         if (softened) m.aoMap = softened
@@ -359,6 +376,19 @@ export function withIblVersion(archive: Uint8Array<ArrayBuffer>): Uint8Array<Arr
 }
 
 /**
+ * Texture ceiling for the export.
+ *
+ * Raised to 2048 to stop iOS being handed maps at half Android's detail, which
+ * was true but cost far more than it was worth: measured on the Margherita, the
+ * normal and roughness maps alone came to 17.7MB of the 25MB archive, and a
+ * phone downloading that over mobile data waits on a spinner far longer than it
+ * ever spent converting locally. Colour is JPEG now and barely notices the
+ * difference; the data maps are the whole cost, and 1024 is ample for an object
+ * held at arm's length.
+ */
+const USDZ_TEXTURE_SIZE = 1024
+
+/**
  * Convert a glTF at `url` into USDZ bytes, ready to host or hand to Quick Look.
  *
  * Split out from `usdzUrl` so the admin can run it once at upload time. Quick
@@ -381,7 +411,7 @@ export async function buildUsdz(url: string, scale: number): Promise<Uint8Array<
   holder.add(root)
 
   prepareForQuickLook(root)
-  const exported = await new USDZExporter().parseAsync(holder, { maxTextureSize: 2048 })
+  const exported = await new USDZExporter().parseAsync(holder, { maxTextureSize: USDZ_TEXTURE_SIZE })
   return withIblVersion(exported as unknown as Uint8Array<ArrayBuffer>)
 }
 
