@@ -7,6 +7,8 @@ export type Product = {
   name: string
   category: string
   url: string
+  /** hosted USDZ, when one was generated at upload; iOS needs a real URL */
+  usdz?: string
   emoji: string
   scale: number
   price?: string
@@ -23,7 +25,11 @@ export async function fetchProducts(): Promise<Product[]> {
     const res = await fetch(api('/api/products'))
     const remote: Product[] = res.ok ? await res.json() : []
     // rewrite /models/... to the API host
-    return remote.map((p) => ({ ...p, url: assetUrl(p.url) }))
+    return remote.map((p) => ({
+      ...p,
+      url: assetUrl(p.url),
+      usdz: p.usdz ? assetUrl(p.usdz) : undefined,
+    }))
   } catch {
     return []
   }

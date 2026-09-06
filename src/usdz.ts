@@ -358,11 +358,17 @@ export function withIblVersion(archive: Uint8Array<ArrayBuffer>): Uint8Array<Arr
   return zipSync(aligned, { level: 0 }) as Uint8Array<ArrayBuffer>
 }
 
-export async function usdzUrl(product: Product): Promise<string> {
-  const hit = cache.get(product.id)
-  if (hit) return hit
-
-  const gltf = await new GLTFLoader().loadAsync(product.url)
+/**
+ * Convert a glTF at `url` into USDZ bytes, ready to host or hand to Quick Look.
+ *
+ * Split out from `usdzUrl` so the admin can run it once at upload time. Quick
+ * Look ignores the banner parameters on a blob: URL — a WebKit limitation that
+ * outlived the bug filed for it — so iOS needs the file served from a real URL
+ * before it will show any control at all. Doing it at upload also spares every
+ * phone the ten-second conversion and the memory it costs.
+ */
+export async function buildUsdz(url: string, scale: number): Promise<Uint8Array<ArrayBuffer>> {
+  const gltf = await new GLTFLoader().loadAsync(url)
   const root = gltf.scene
 
   const box = new Box3().setFromObject(root)
@@ -370,20 +376,26 @@ export async function usdzUrl(product: Product): Promise<string> {
     const o = groundingOffset(box.min, box.max)
     root.position.set(o.x, o.y, o.z)
   }
-  // Quick Look reads the scene in metres, so bake the product scale in.
   const holder = new Group()
-  holder.scale.setScalar(product.scale || 1)
+  holder.scale.setScalar(scale || 1)
   holder.add(root)
 
   prepareForQuickLook(root)
-
-  // The exporter halves anything above 1K by default, so the normal and
-  // roughness maps iOS was being handed had half the detail Android renders.
-  // Measured on the Double Stack: 9.7MB against 16.2MB, and the export takes
-  // the same time either way, since PNG encoding dominates. Base colour is
-  // untouched at 1024 — only maps authored larger gain anything.
   const exported = await new USDZExporter().parseAsync(holder, { maxTextureSize: 2048 })
-  const archive = withIblVersion(exported as unknown as Uint8Array<ArrayBuffer>)
+  return withIblVersion(exported as unknown as Uint8Array<ArrayBuffer>)
+}
+
+/**
+ * Fallback for a product with no hosted USDZ: convert on the phone.
+ *
+ * Works, but Quick Look will show no banner, because it ignores the fragment
+ * parameters on a blob: URL. Everything uploaded since hosting was added has a
+ * real URL and does not come through here.
+ */
+export async function usdzUrl(product: Product): Promise<string> {
+  const hit = cache.get(product.id)
+  if (hit) return hit
+  const archive = await buildUsdz(product.url, product.scale)
   const url = URL.createObjectURL(new Blob([archive], { type: 'model/vnd.usdz+zip' }))
   cache.set(product.id, url)
   return url

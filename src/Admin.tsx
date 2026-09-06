@@ -3,6 +3,7 @@ import QRCode from 'qrcode'
 import type { Product } from './products'
 import { api as apiUrl } from './api'
 import { useConfirm } from './Confirm'
+import { buildUsdz } from './usdz'
 import { bakeRealScale } from './bake'
 
 const TrashIcon = () => (
@@ -168,6 +169,33 @@ export function Admin() {
       })
       const upJson = await up.json()
       if (!up.ok) throw new Error(upJson.error)
+
+      /*
+       * Convert once, here, rather than on every phone that opens the product.
+       * Quick Look ignores the banner parameters on a blob: URL, so iOS cannot
+       * show any control over a model converted on the device — and the
+       * conversion costs a phone ten seconds and a good deal of memory besides.
+       * A failure is not fatal: the product still works, iOS just falls back to
+       * converting locally without a banner.
+       */
+      let usdz = ''
+      try {
+        setBusy('Converting for iOS…')
+        const glbUrl = URL.createObjectURL(blob)
+        const archive = await buildUsdz(glbUrl, 1)
+        URL.revokeObjectURL(glbUrl)
+        const name = file.name.replace(/\.[^.]+$/, '') + '.usdz'
+        const usdzUp = await fetch(apiUrl('/api/admin/upload'), {
+          method: 'PUT',
+          headers: { 'x-admin-session': session?.token ?? '', 'x-filename': name },
+          body: new Blob([archive], { type: 'model/vnd.usdz+zip' }),
+        })
+        if (usdzUp.ok) usdz = (await usdzUp.json()).url
+      } catch {
+        usdz = ''
+      }
+
+      setBusy('Saving…')
       const res = await api('/api/admin/products', {
         method: 'POST',
         // scale is baked into the file now, so the record carries 1
@@ -175,6 +203,7 @@ export function Admin() {
           ...form,
           scale: 1,
           url: upJson.url,
+          usdz,
           dimensions:
             form.dimensions ||
             `${Math.round(size.x * 1000)} × ${Math.round(size.y * 1000)} × ${Math.round(size.z * 1000)} mm`,

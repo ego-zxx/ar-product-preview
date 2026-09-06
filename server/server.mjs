@@ -124,13 +124,16 @@ const routes = {
   },
   'GET /api/products': () => [200, db.products],
   'POST /api/admin/products': (body) => {
-    const { name, category, url, emoji, scale, price, description, dimensions, specs } = body
+    const { name, category, url, usdz, emoji, scale, price, description, dimensions, specs } = body
     if (!name || !url) return [400, { error: 'name and url required' }]
     const p = {
       id: randomBytes(6).toString('hex'),
       name,
       category: category || 'Other',
       url,
+      // Quick Look ignores the banner parameters on a blob URL, so iOS needs a
+      // real one. Generated once at upload rather than on every phone.
+      usdz: typeof usdz === 'string' ? usdz : '',
       emoji: emoji || '\u{1F6C1}',
       scale: Number(scale) > 0 ? Number(scale) : 1,
       price: String(price ?? '').trim().slice(0, 40),
@@ -146,6 +149,14 @@ const routes = {
         .map(([k, v]) => ({ label: k.trim().slice(0, 40), value: v.trim().slice(0, 80) })),
     }
     db.products.push(p)
+    save()
+    return [200, p]
+  },
+  // attaching a USDZ to a product that predates hosting them
+  'POST /api/admin/products/usdz': (body) => {
+    const p = db.products.find((x) => x.id === body.id)
+    if (!p) return [404, { error: 'no such product' }]
+    p.usdz = String(body.usdz ?? '')
     save()
     return [200, p]
   },

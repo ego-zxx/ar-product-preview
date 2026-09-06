@@ -193,17 +193,19 @@ function ViewInSpace({
     const open = async () => {
       setState('preparing')
       try {
-        const href = await usdzUrl(product)
+        // A hosted USDZ is the only kind Quick Look will show a banner over:
+        // it ignores the fragment parameters on a blob: URL, so a model
+        // converted on the phone gets AR but no next-item control.
+        const href = product.usdz ?? (await usdzUrl(product))
         const a = anchor.current
         if (!a) return
-        a.href = next
-          ? withBanner(href, 'Next item', product.name, product.price || product.category)
-          : href
+        a.href =
+          next && product.usdz
+            ? withBanner(href, 'Next item', product.name, product.price || product.category)
+            : href
         a.click()
         setState('idle')
-        // convert the next one while this one is being looked at, so its tap
-        // has a URL waiting rather than a promise
-        if (next) usdzUrl(next).then((u) => { readyNext.current = u }).catch(() => {})
+        readyNext.current = next?.usdz ?? null
       } catch {
         setState('failed')
       }
