@@ -3,7 +3,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { Box3, PMREMGenerator, Vector3, type Group, type PerspectiveCamera } from 'three'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { Model } from './Model'
-import { supportsQuickLook, usdzUrl, withBanner, QUICK_LOOK_TAP } from './usdz'
+import { supportsQuickLook, usdzUrl } from './usdz'
 import type { Product } from './products'
 
 /** Studio lighting for the non-AR preview — no camera feed to match here. */
@@ -136,49 +136,19 @@ const PITCH_MAX = 1.25
  * iOS has no WebXR at all, so it hands off to AR Quick Look.
  */
 function ViewInSpace({
-  product, arSupported, onViewInSpace, next, onNext,
+  product, arSupported, onViewInSpace,
 }: {
   product: Product
   arSupported: boolean | null
   onViewInSpace: () => void
-  next: Product | null
-  onNext: () => void
 }) {
   const [quickLook, setQuickLook] = useState(false)
   const [state, setState] = useState<'idle' | 'preparing' | 'failed'>('idle')
   const anchor = useRef<HTMLAnchorElement>(null)
-  /*
-   * The next item's USDZ, converted ahead of time. Quick Look can only be
-   * relaunched from inside the tap that dismissed it, and converting a model
-   * takes seconds, so awaiting one there would lose the gesture and strand the
-   * user on this page — which is the going-back this is meant to avoid.
-   */
-  const readyNext = useRef<string | null>(null)
 
   useEffect(() => {
     setQuickLook(supportsQuickLook())
   }, [])
-
-  useEffect(() => {
-    readyNext.current = null
-  }, [next?.id])
-
-  // Stepping the menu from inside Quick Look: its banner is the only control
-  // Apple gives us, and this is the tap arriving back from it.
-  useEffect(() => {
-    const a = anchor.current
-    if (!a) return
-    const onMessage = (event: Event) => {
-      if ((event as MessageEvent).data !== QUICK_LOOK_TAP) return
-      const href = readyNext.current
-      if (!href || !next) return
-      a.href = withBanner(href, 'Next item', next.name, next.price || next.category)
-      a.click()
-      onNext()
-    }
-    a.addEventListener('message', onMessage)
-    return () => a.removeEventListener('message', onMessage)
-  }, [next, onNext])
 
   // Android (and anything else with WebXR): render in-page.
   if (arSupported) {
@@ -190,22 +160,26 @@ function ViewInSpace({
   }
 
   if (quickLook) {
+    /*
+     * Convert on the device rather than downloading a hosted USDZ.
+     *
+     * Hosting was the only way to get Quick Look's next-item banner, since it
+     * ignores the fragment parameters on a blob: URL. But it traded a small
+     * glTF for a much larger archive — the Double Stack goes from 1.8MB to
+     * 8.2MB — and on a shared connection that download costs more than a
+     * modern iPhone spends converting. The banner also could not do the one
+     * thing it was for: Safari refuses to reopen AR from its tap, so it only
+     * ever returned to the product page.
+     */
     const open = async () => {
       setState('preparing')
       try {
-        // A hosted USDZ is the only kind Quick Look will show a banner over:
-        // it ignores the fragment parameters on a blob: URL, so a model
-        // converted on the phone gets AR but no next-item control.
-        const href = product.usdz ?? (await usdzUrl(product))
+        const href = await usdzUrl(product)
         const a = anchor.current
         if (!a) return
-        a.href =
-          next && product.usdz
-            ? withBanner(href, 'Next item', product.name, product.price || product.category)
-            : href
+        a.href = href
         a.click()
         setState('idle')
-        readyNext.current = next?.usdz ?? null
       } catch {
         setState('failed')
       }
@@ -247,16 +221,11 @@ export function ProductPage({
   onBack,
   onViewInSpace,
   arSupported,
-  next,
-  onNext,
 }: {
   product: Product
   onBack: () => void
   onViewInSpace: () => void
   arSupported: boolean | null
-  /** the item Quick Look's banner steps to; null when there is only one */
-  next: Product | null
-  onNext: () => void
 }) {
   const ctrl = useRef<Orbit>({
     yaw: 0,
@@ -371,13 +340,7 @@ export function ProductPage({
       )}
 
       <div style={{ marginTop: 26 }}>
-        <ViewInSpace
-          product={product}
-          arSupported={arSupported}
-          onViewInSpace={onViewInSpace}
-          next={next}
-          onNext={onNext}
-        />
+        <ViewInSpace product={product} arSupported={arSupported} onViewInSpace={onViewInSpace} />
       </div>
 
       {(product.dimensions || product.specs?.length) && (
