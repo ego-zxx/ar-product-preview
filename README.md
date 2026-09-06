@@ -258,11 +258,14 @@ reading its source rather than guessing:
   the viewer shows one USDZ. The next model is converted while the current one
   is on screen, because the relaunch has to happen inside the tap and awaiting
   a conversion there would lose the gesture.
-- **Stepping the menu** without leaving AR: the arrow on the right edge swaps
-  to the next item, wrapping, and anything already placed keeps its pose and
-  changes model. Comparing dishes is only useful in the same spot on the same
-  table, so the pose is what must survive, not the object. The status line
-  names the dish once one is standing there.
+- **Switching dish without leaving AR** (Android): a scrolling strip of the
+  menu sits above the action buttons, and tapping one swaps the model while
+  anything already placed keeps its pose. Comparing dishes is only useful in
+  the same spot on the same table, so the pose is what must survive, not the
+  object. It replaced a single next arrow, which meant cycling six dishes to
+  reach the fifth. Hidden in the clean view along with the rest of the overlay.
+  iOS has no equivalent: Quick Look is a system screen with no overlay of ours,
+  and the banner Apple does allow cannot reopen AR.
 - **Placement** turns the product's front toward the camera.
 - **iOS AR lighting has exactly one setting we control**, and it was being left
   to chance. Apple ships two image-based lighting environments and chooses

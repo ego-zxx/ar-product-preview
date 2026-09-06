@@ -701,19 +701,13 @@ console.log('quick look baked roughness ok')
 
 console.log('measured plate exposure ok')
 
-// App.tsx next-item arrow: stepping through the menu in AR must swap the model
-// and nothing else. The pose is the whole value of comparing in place.
+// App.tsx AR menu strip: switching dish in AR must swap the model and nothing
+// else. The pose is the whole value of comparing in place.
 {
   const products = [{ id: 'a' }, { id: 'b' }, { id: 'c' }]
-  const step = (currentId) => {
-    const at = products.findIndex((p) => p.id === currentId)
-    return products[(at + 1) % products.length]
-  }
-  assert.equal(step('a').id, 'b', 'advances')
-  assert.equal(step('c').id, 'a', 'wraps, so one arrow reaches every item')
-  // an id no longer in the catalogue must not strand the arrow: findIndex gives
-  // -1, and -1 + 1 is 0, so it lands on the first item rather than undefined
-  assert.equal(step('gone').id, 'a', 'an unknown current item falls to the first')
+  // the strip addresses items directly, so there is no cursor to run off the
+  // end of and no wrap to get wrong — every product is one tap from any other
+  assert.equal(products.length, new Set(products.map((p) => p.id)).size, 'ids are unique keys')
 
   const placed = { id: 7, product: products[0], yaw: 1.23, anchor: 'anchor', matrix: 'matrix' }
   const swapped = { ...placed, product: products[1] }
@@ -724,7 +718,7 @@ console.log('measured plate exposure ok')
   assert.equal(swapped.id, placed.id, 'it stays the same placed object')
 }
 
-console.log('next item swap ok')
+console.log('ar menu swap ok')
 
 
 // usdz.ts preferredIblVersion: the one piece of iOS AR lighting that is ours to

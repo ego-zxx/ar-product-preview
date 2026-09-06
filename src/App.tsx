@@ -141,20 +141,16 @@ export function App() {
   )
 
   /*
-   * Step to the next item without leaving AR, so a menu can be browsed in
-   * place. Anything already placed keeps its pose and swaps model, which is
-   * the point: the comparison people actually want is the same spot on the
-   * same table, not the same dish in two different rooms. Wraps, so one arrow
-   * reaches every item.
+   * Swap the item without leaving AR, so a menu can be browsed in place.
+   * Anything already placed keeps its pose and only changes model, which is
+   * the point: the comparison people actually want is the same dish position
+   * on the same table, not the same dish in two different rooms.
    */
-  const nextProduct = useCallback(() => {
-    if (products.length < 2) return
-    const at = products.findIndex((p) => p.id === productId)
-    const next = products[(at + 1) % products.length]
-    setProductId(next.id)
-    setDraft((d) => (d ? { product: next } : d))
-    setObjects((placed) => placed.map((o) => ({ ...o, product: next })))
-  }, [products, productId])
+  const switchTo = useCallback((target: Product) => {
+    setProductId(target.id)
+    setDraft((d) => (d ? { product: target } : d))
+    setObjects((placed) => placed.map((o) => ({ ...o, product: target })))
+  }, [])
 
   // Read the draft through a ref: React may re-run or discard a state updater,
   // so committing must never happen *inside* one.
@@ -464,19 +460,6 @@ export function App() {
                 Being a DOM element it also stops taps reaching the XR select. */}
             {draft && <div className="ar-rotate" {...gestureHandlers} />}
 
-            {products.length > 1 && (
-              <button
-                className="ar-icon ar-next"
-                aria-label="Next item"
-                onPointerDown={muteSelect}
-                onClick={nextProduct}
-              >
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M9.3 4.7a1 1 0 0 0 0 1.4l5.9 5.9-5.9 5.9a1 1 0 1 0 1.4 1.4l6.6-6.6a1 1 0 0 0 0-1.4L10.7 4.7a1 1 0 0 0-1.4 0Z" />
-                </svg>
-              </button>
-            )}
-
             <div className="ar-top">
               <button
                 className="ar-icon"
@@ -538,6 +521,24 @@ match ${diag.match}`}
             {error && <div className="err">{error}</div>}
 
             <div className="ar-bottom">
+              {/* The menu itself, in reach of a thumb. A single next arrow
+                  meant cycling six dishes to reach the fifth; this jumps. */}
+              {products.length > 1 && (
+                <div className="ar-switcher">
+                  {products.map((p) => (
+                    <button
+                      key={p.id}
+                      className="ar-chip"
+                      data-on={p.id === productId}
+                      onPointerDown={muteSelect}
+                      onClick={() => switchTo(p)}
+                    >
+                      <span aria-hidden="true">{p.emoji}</span>
+                      {p.name}
+                    </button>
+                  ))}
+                </div>
+              )}
               {draft && (
                 <div className="ar-actions">
                   <button className="pill" onPointerDown={muteSelect} onClick={() => setDraft(null)}>
