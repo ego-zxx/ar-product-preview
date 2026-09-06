@@ -273,6 +273,10 @@ export function App() {
         <ProductPage
           product={routed}
           arSupported={supported}
+          products={products}
+          onPick={(p) => {
+            location.hash = `#/product/${p.id}`
+          }}
           onBack={() => {
             location.hash = ''
           }}

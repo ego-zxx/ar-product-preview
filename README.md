@@ -265,7 +265,10 @@ reading its source rather than guessing:
   object. It replaced a single next arrow, which meant cycling six dishes to
   reach the fifth. Hidden in the clean view along with the rest of the overlay.
   iOS has no equivalent: Quick Look is a system screen with no overlay of ours,
-  and the banner Apple does allow cannot reopen AR.
+  and the banner Apple does allow cannot reopen AR. The same strip therefore
+  also sits on the product page, under the AR button, which is where Quick Look
+  returns you — so switching dish on iOS is two taps rather than a trip out to
+  the catalogue and back.
 - **Placement** turns the product's front toward the camera.
 - **iOS AR lighting has exactly one setting we control**, and it was being left
   to chance. Apple ships two image-based lighting environments and chooses

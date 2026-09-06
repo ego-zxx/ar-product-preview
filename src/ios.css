@@ -387,6 +387,17 @@ a { color: var(--gold); }
   color: var(--on-gold); border-color: transparent;
 }
 
+/* The same chips on the product page, where Quick Look drops iOS users back.
+   Scrolls rather than wrapping, so the row stays one line however long the
+   menu grows. */
+.page-switcher {
+  display: flex; gap: 8px; margin-top: 14px;
+  overflow-x: auto; scroll-snap-type: x mandatory;
+  scrollbar-width: none; -webkit-overflow-scrolling: touch;
+  padding-bottom: 2px;
+}
+.page-switcher::-webkit-scrollbar { display: none; }
+
 .ar-actions { display: flex; gap: 10px; margin-bottom: 14px; }
 .ar-actions .pill { flex: 1; text-align: center; }
 .pill[data-primary="true"] {

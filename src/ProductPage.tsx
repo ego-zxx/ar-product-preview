@@ -221,11 +221,16 @@ export function ProductPage({
   onBack,
   onViewInSpace,
   arSupported,
+  products,
+  onPick,
 }: {
   product: Product
   onBack: () => void
   onViewInSpace: () => void
   arSupported: boolean | null
+  /** the rest of the menu, for switching without a trip through the catalogue */
+  products: Product[]
+  onPick: (p: Product) => void
 }) {
   const ctrl = useRef<Orbit>({
     yaw: 0,
@@ -341,6 +346,30 @@ export function ProductPage({
 
       <div style={{ marginTop: 26 }}>
         <ViewInSpace product={product} arSupported={arSupported} onViewInSpace={onViewInSpace} />
+        {/*
+          The menu, under the AR button.
+
+          Android can switch dish inside AR; iOS cannot, because Quick Look is
+          a system screen with no overlay of ours. Leaving AR there used to
+          mean going back to the catalogue and in again — three taps to see the
+          next dish. This is where Quick Look returns you, so putting the menu
+          here makes it two: pick, then view.
+        */}
+        {products.length > 1 && (
+          <div className="page-switcher">
+            {products.map((p) => (
+              <button
+                key={p.id}
+                className="ar-chip"
+                data-on={p.id === product.id}
+                onClick={() => onPick(p)}
+              >
+                <span aria-hidden="true">{p.emoji}</span>
+                {p.name}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {(product.dimensions || product.specs?.length) && (
