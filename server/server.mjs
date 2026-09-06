@@ -234,8 +234,11 @@ createServer(async (req, res) => {
       return
     }
     const name = basename(String(req.headers['x-filename'] ?? 'model.glb')).replace(/[^\w.-]/g, '_')
-    if (!['.glb', '.gltf'].includes(extname(name).toLowerCase())) {
-      res.writeHead(400, CORS).end('{"error":"only .glb or .gltf"}')
+    // .usdz too: iOS needs its model served from a real URL, since Quick Look
+    // ignores the banner parameters on a blob, so one is built at upload and
+    // stored beside the glTF it came from.
+    if (!['.glb', '.gltf', '.usdz'].includes(extname(name).toLowerCase())) {
+      res.writeHead(400, CORS).end('{"error":"only .glb, .gltf or .usdz"}')
       return
     }
     const chunks = []

@@ -10,7 +10,7 @@
     {
       "name": "web",
       "runtimeExecutable": "env",
-      "runtimeArgs": ["NO_SSL=1", "VITE_OPEN_ACCESS=1", "npx", "vite", "--host", "--port", "5175"],
+      "runtimeArgs": ["NO_SSL=1", "VITE_OPEN_ACCESS=1", "API_PROXY=https://ar-product-preview-production.up.railway.app", "npx", "vite", "--host", "--port", "5175"],
       "port": 5175
     }
   ]
