@@ -258,22 +258,6 @@ reading its source rather than guessing:
   the viewer shows one USDZ. The next model is converted while the current one
   is on screen, because the relaunch has to happen inside the tap and awaiting
   a conversion there would lose the gesture.
-- **Switching dish without leaving AR** (Android): a scrolling strip of the
-  menu sits above the action buttons, and tapping one swaps the model while
-  anything already placed keeps its pose. Comparing dishes is only useful in
-  the same spot on the same table, so the pose is what must survive, not the
-  object. It replaced a single next arrow, which meant cycling six dishes to
-  reach the fifth. Hidden in the clean view along with the rest of the overlay.
-  iOS gets the nearest thing Quick Look permits. Its banner announces the next
-  dish, and a tap on it returns here — the banner is display-only, so it cannot
-  open anything itself, and our page holds no user activation when the message
-  arrives, which is why Safari refuses to reopen AR from it. The prompt that
-  appears instead carries the one tap Safari wants, so stepping the menu is
-  banner, then confirm. This needs the hosted USDZ: the fragment parameters are
-  dropped entirely on a blob, so a model converted on the phone gets no banner.
-  Hosting costs a bigger first download per dish than fetching the glTF, and it
-  is cached immutably so that lands once. The menu strip also sits on the
-  product page for anyone who dismisses the prompt.
 - **Placement** turns the product's front toward the camera.
 - **iOS AR lighting has exactly one setting we control**, and it was being left
   to chance. Apple ships two image-based lighting environments and chooses

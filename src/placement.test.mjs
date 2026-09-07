@@ -701,24 +701,6 @@ console.log('quick look baked roughness ok')
 
 console.log('measured plate exposure ok')
 
-// App.tsx AR menu strip: switching dish in AR must swap the model and nothing
-// else. The pose is the whole value of comparing in place.
-{
-  const products = [{ id: 'a' }, { id: 'b' }, { id: 'c' }]
-  // the strip addresses items directly, so there is no cursor to run off the
-  // end of and no wrap to get wrong — every product is one tap from any other
-  assert.equal(products.length, new Set(products.map((p) => p.id)).size, 'ids are unique keys')
-
-  const placed = { id: 7, product: products[0], yaw: 1.23, anchor: 'anchor', matrix: 'matrix' }
-  const swapped = { ...placed, product: products[1] }
-  assert.equal(swapped.product.id, 'b', 'the model changes')
-  assert.equal(swapped.yaw, placed.yaw, 'the rotation survives the swap')
-  assert.equal(swapped.anchor, placed.anchor, 'the anchor survives the swap')
-  assert.equal(swapped.matrix, placed.matrix, 'the pose survives the swap')
-  assert.equal(swapped.id, placed.id, 'it stays the same placed object')
-}
-
-console.log('ar menu swap ok')
 
 
 // usdz.ts preferredIblVersion: the one piece of iOS AR lighting that is ours to
@@ -773,31 +755,3 @@ console.log('quick look ibl version ok')
 
 console.log('override parsing ok')
 
-// usdz.ts Quick Look banner: the fragment is the whole of what the banner says,
-// so a dish name carrying punctuation must not collapse the parameters into one
-// and leave AR announcing nothing.
-{
-  const withBanner = (url, action, title, subtitle) =>
-    `${url}#callToAction=${encodeURIComponent(action)}` +
-    `&checkoutTitle=${encodeURIComponent(title)}` +
-    `&checkoutSubtitle=${encodeURIComponent(subtitle)}`
-
-  const href = withBanner('https://x/pizza.usdz', 'Next item', 'Margherita, 12 inch', '£12')
-  assert.equal(href.split('#').length, 2, 'exactly one fragment')
-  const p = new URLSearchParams(href.split('#')[1])
-  assert.equal(p.get('callToAction'), 'Next item')
-  assert.equal(p.get('checkoutTitle'), 'Margherita, 12 inch', 'a comma survives')
-  assert.equal(p.get('checkoutSubtitle'), '£12', 'a currency symbol survives')
-
-  // an ampersand is the case that would silently inject a parameter
-  const risky = withBanner('https://x/a.usdz', 'Next item', 'Fish & Chips', 'Mains')
-  const q = new URLSearchParams(risky.split('#')[1])
-  assert.equal(q.get('checkoutTitle'), 'Fish & Chips')
-  assert.equal(q.get('callToAction'), 'Next item', 'the action label is not clobbered')
-
-  // the banner only rides a hosted file: Quick Look drops these on a blob, so a
-  // blob href must never be dressed up as though it carried one
-  assert.ok(!'blob:https://site/abc'.startsWith('http'), 'blob urls are distinguishable')
-}
-
-console.log('quick look banner ok')

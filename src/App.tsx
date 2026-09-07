@@ -140,17 +140,6 @@ export function App() {
     [draft, selected, objects.length],
   )
 
-  /*
-   * Swap the item without leaving AR, so a menu can be browsed in place.
-   * Anything already placed keeps its pose and only changes model, which is
-   * the point: the comparison people actually want is the same dish position
-   * on the same table, not the same dish in two different rooms.
-   */
-  const switchTo = useCallback((target: Product) => {
-    setProductId(target.id)
-    setDraft((d) => (d ? { product: target } : d))
-    setObjects((placed) => placed.map((o) => ({ ...o, product: target })))
-  }, [])
 
   // Read the draft through a ref: React may re-run or discard a state updater,
   // so committing must never happen *inside* one.
@@ -273,10 +262,6 @@ export function App() {
         <ProductPage
           product={routed}
           arSupported={supported}
-          products={products}
-          onPick={(p) => {
-            location.hash = `#/product/${p.id}`
-          }}
           onBack={() => {
             location.hash = ''
           }}
@@ -525,24 +510,6 @@ match ${diag.match}`}
             {error && <div className="err">{error}</div>}
 
             <div className="ar-bottom">
-              {/* The menu itself, in reach of a thumb. A single next arrow
-                  meant cycling six dishes to reach the fifth; this jumps. */}
-              {products.length > 1 && (
-                <div className="ar-switcher">
-                  {products.map((p) => (
-                    <button
-                      key={p.id}
-                      className="ar-chip"
-                      data-on={p.id === productId}
-                      onPointerDown={muteSelect}
-                      onClick={() => switchTo(p)}
-                    >
-                      <span aria-hidden="true">{p.emoji}</span>
-                      {p.name}
-                    </button>
-                  ))}
-                </div>
-              )}
               {draft && (
                 <div className="ar-actions">
                   <button className="pill" onPointerDown={muteSelect} onClick={() => setDraft(null)}>
