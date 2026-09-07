@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { Box3, PMREMGenerator, Vector3, type Group, type PerspectiveCamera } from 'three'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
@@ -143,12 +143,42 @@ function ViewInSpace({
   onViewInSpace: () => void
 }) {
   const [quickLook, setQuickLook] = useState(false)
-  const [state, setState] = useState<'idle' | 'preparing' | 'failed'>('idle')
+  const [href, setHref] = useState<string | null>(null)
+  const [failed, setFailed] = useState(false)
   const anchor = useRef<HTMLAnchorElement>(null)
 
   useEffect(() => {
     setQuickLook(supportsQuickLook())
   }, [])
+
+  /*
+   * Convert on arrival rather than on the tap.
+   *
+   * Safari only follows a rel="ar" link while the tap that triggered it is
+   * still fresh — a few seconds — and converting a textured model takes longer
+   * than that: the Cheeseburger is 4.4s on a desktop and more on a phone. The
+   * click issued after that await was therefore being dropped in silence, so
+   * the button did nothing at all. Building while the turntable spins means the
+   * tap itself is synchronous and the activation is still valid.
+   *
+   * Still converted on the device rather than downloaded: hosting is the only
+   * way Quick Look will show a banner, since it drops the fragment parameters
+   * on a blob, and without a banner there is nothing to host for. The glTF is a
+   * fraction of the archive's size — 0.6MB against 4.1MB for the Cheeseburger.
+   */
+  useEffect(() => {
+    if (!quickLook) return
+    let live = true
+    setHref(null)
+    setFailed(false)
+    usdzUrl(product).then(
+      (url) => live && setHref(url),
+      () => live && setFailed(true),
+    )
+    return () => {
+      live = false
+    }
+  }, [quickLook, product])
 
   // Android (and anything else with WebXR): render in-page.
   if (arSupported) {
@@ -160,38 +190,16 @@ function ViewInSpace({
   }
 
   if (quickLook) {
-    /*
-     * Convert on the device rather than downloading a hosted USDZ.
-     *
-     * Hosting is the only way Quick Look will show a banner, since it drops
-     * the fragment parameters on a blob. Without a banner there is nothing to
-     * host for, and the glTF is a fraction of the archive's size — 0.6MB
-     * against 4.1MB for the Cheeseburger — so the phone fetches the small file
-     * and expands it locally.
-     */
-    const open = async () => {
-      setState('preparing')
-      try {
-        const href = await usdzUrl(product)
-        const a = anchor.current
-        if (!a) return
-        a.href = href
-        a.click()
-        setState('idle')
-      } catch {
-        setState('failed')
-      }
-    }
     return (
       <>
-        <button className="btn" disabled={state === 'preparing'} onClick={open}>
-          {state === 'preparing' ? 'Preparing…' : 'View in your space'}
+        <button className="btn" disabled={!href} onClick={() => anchor.current?.click()}>
+          {href ? 'View in your space' : failed ? 'Unavailable in AR' : 'Preparing…'}
         </button>
         {/* Safari only treats rel="ar" as a Quick Look link when it wraps an image */}
-        <a ref={anchor} rel="ar" style={{ display: 'none' }} aria-hidden="true">
+        <a ref={anchor} rel="ar" href={href ?? undefined} style={{ display: 'none' }} aria-hidden="true">
           <img alt="" />
         </a>
-        {state === 'failed' && (
+        {failed && (
           <p className="sub" style={{ marginTop: 10, textAlign: 'center', color: 'var(--red)' }}>
             Could not prepare this model for AR.
           </p>
