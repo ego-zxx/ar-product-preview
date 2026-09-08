@@ -413,18 +413,25 @@ export async function buildUsdz(url: string, scale: number): Promise<Uint8Array<
   return withIblVersion(exported as unknown as Uint8Array<ArrayBuffer>)
 }
 
+/** Build the model and hand back a URL Quick Look will open. */
 /**
- * Fallback for a product with no hosted USDZ: convert on the phone.
+ * Lock the size. Quick Look lets a pinch resize the model to anything by
+ * default, which for a product preview defeats the point: the dish is supposed
+ * to arrive at its real size on the table. Moving and rotating stay on, which
+ * matches what the Android scene offers.
  *
- * Works, but Quick Look will show no banner, because it ignores the fragment
- * parameters on a blob: URL. Everything uploaded since hosting was added has a
- * real URL and does not come through here.
+ * Apple exposes no way to say this inside the file — it is a fragment on the
+ * URL — and WebKit ignored fragments on blob: URLs until iOS 15.5, so this is
+ * inert on anything older than that and honoured everywhere since.
  */
+const QUICK_LOOK_OPTIONS = '#allowsContentScaling=0'
+
 export async function usdzUrl(product: Product): Promise<string> {
   const hit = cache.get(product.id)
   if (hit) return hit
   const archive = await buildUsdz(product.url, product.scale)
-  const url = URL.createObjectURL(new Blob([archive], { type: 'model/vnd.usdz+zip' }))
+  const url =
+    URL.createObjectURL(new Blob([archive], { type: 'model/vnd.usdz+zip' })) + QUICK_LOOK_OPTIONS
   cache.set(product.id, url)
   return url
 }

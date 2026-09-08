@@ -161,10 +161,9 @@ function ViewInSpace({
    * the button did nothing at all. Building while the turntable spins means the
    * tap itself is synchronous and the activation is still valid.
    *
-   * Still converted on the device rather than downloaded: hosting is the only
-   * way Quick Look will show a banner, since it drops the fragment parameters
-   * on a blob, and without a banner there is nothing to host for. The glTF is a
-   * fraction of the archive's size — 0.6MB against 4.1MB for the Cheeseburger.
+   * Still converted on the device rather than downloaded: the glTF is a
+   * fraction of the archive's size — 0.6MB against 4.1MB for the Cheeseburger —
+   * and nothing needs a hosted file any more now the banner is gone.
    */
   useEffect(() => {
     if (!quickLook) return
